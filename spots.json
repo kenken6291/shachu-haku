@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "updated": "2026-06-12",
+  "_schema": {
+    "id": "一意のID（英数字とハイフン）。修正PRの目印になるため変更しない",
+    "name": "スポット名（必須）",
+    "category": "michinoeki | rvpark | camp | view | onsen | parking のいずれか（必須）",
+    "lat": "緯度（必須・数値）",
+    "lng": "経度（必須・数値）",
+    "description": "一言紹介（任意）",
+    "facilities": "設備フラグ。true のものだけ書けばOK： toilet / power / bath / shop / wifi / dump",
+    "openHours": "営業時間・チェックイン時間など（任意・文字列）",
+    "fee": "料金（任意・文字列）",
+    "notes": "注意事項（任意）",
+    "addedBy": "投稿者のGitHubユーザー名など（任意）"
+  },
+  "spots": [
+    {
+      "id": "michinoeki-fujiyoshida",
+      "name": "道の駅 富士吉田",
+      "category": "michinoeki",
+      "lat": 35.4646,
+      "lng": 138.7986,
+      "description": "富士山の湧き水が汲める人気の道の駅。隣接して日帰り温泉あり。",
+      "facilities": { "toilet": true, "shop": true, "wifi": true },
+      "openHours": "駐車場24時間（売店 9:00-19:00）",
+      "fee": "無料",
+      "notes": "週末は混雑。アイドリングは控えめに。",
+      "addedBy": "your-name"
+    },
+    {
+      "id": "rvpark-lakeside-base",
+      "name": "RVパーク 湖畔ベース",
+      "category": "rvpark",
+      "lat": 35.5031,
+      "lng": 138.7644,
+      "description": "湖を一望できる電源付きサイト。ダンプステーション完備。",
+      "facilities": { "toilet": true, "power": true, "dump": true, "wifi": true },
+      "openHours": "チェックイン 13:00-18:00 / チェックアウト 11:00",
+      "fee": "2,500円/泊",
+      "notes": "要事前予約（公式サイトから）。",
+      "addedBy": "your-name"
+    },
+    {
+      "id": "camp-hoshifuru-hama",
+      "name": "星降る浜キャンプ場",
+      "category": "camp",
+      "lat": 34.6801,
+      "lng": 138.9445,
+      "description": "海沿いのフリーサイト。夕日と星空が自慢。",
+      "facilities": { "toilet": true, "shop": true, "bath": true },
+      "openHours": "通年営業（受付 8:00-17:00）",
+      "fee": "1,000円/人",
+      "notes": "直火不可・焚き火台のみ可。",
+      "addedBy": "your-name"
+    },
+    {
+      "id": "view-bibanba-pass",
+      "name": "美ヶ原 思い出の丘",
+      "category": "view",
+      "lat": 36.2422,
+      "lng": 138.0863,
+      "description": "標高約1,900mから北アルプスを一望。雲海の名所。",
+      "facilities": { "toilet": true },
+      "openHours": "通行可能期間: 4月下旬〜11月（冬季閉鎖）",
+      "fee": "無料",
+      "notes": "夜間は冷え込むため防寒必須。宿泊不可・休憩のみ。",
+      "addedBy": "your-name"
+    },
+    {
+      "id": "onsen-akane-no-yu",
+      "name": "日帰り温泉 あかねの湯",
+      "category": "onsen",
+      "lat": 36.6513,
+      "lng": 138.1810,
+      "description": "車中泊旅の強い味方。露天風呂と食事処あり。",
+      "facilities": { "toilet": true, "bath": true, "shop": true, "wifi": true },
+      "openHours": "10:00-22:00（最終受付 21:00）",
+      "fee": "入浴 800円",
+      "notes": "駐車場での仮眠は不可。入浴のみ。",
+      "addedBy": "your-name"
+    },
+    {
+      "id": "parking-kawara-24h",
+      "name": "河原町 24時間駐車場",
+      "category": "parking",
+      "lat": 35.0094,
+      "lng": 135.7680,
+      "description": "市街地観光の拠点に便利な平面駐車場。",
+      "facilities": { "toilet": false },
+      "openHours": "24時間",
+      "fee": "上限 1,200円/日",
+      "notes": "車中泊の可否は現地掲示を確認してください。",
+      "addedBy": "your-name"
+    }
+  ]
+}

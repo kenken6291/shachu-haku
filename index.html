@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>くるま旅マップ | 車中泊・キャンプスポット共有マップ</title>
+<meta name="description" content="車中泊・キャンプスポットをみんなで共有するオープンなマップ。データはGitHubで管理しています。" />
+
+<!-- Leaflet (APIキー不要・オープンソース) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- Tailwind CSS (CDN) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Fonts: 丸ゴシック（道路標識的な親しみ）＋ 本文用 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          pine:    '#16352B',  // 深い松の緑（基調）
+          pinedim: '#2C5446',
+          mist:    '#F2F5F1',  // 朝靄の白
+          lantern: '#E8A33D',  // ランタンの灯（アクセント）
+          nightsky:'#0E1F1A',
+        },
+        fontFamily: {
+          maru: ['"Zen Maru Gothic"', 'sans-serif'],
+          body: ['"Noto Sans JP"', 'sans-serif'],
+        },
+      }
+    }
+  }
+</script>
+
+<style>
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body { font-family: 'Noto Sans JP', sans-serif; }
+  #map { width: 100%; height: 100%; background: #DCE6DE; }
+
+  /* ===== カスタムピン（ティアドロップ型バッジ） ===== */
+  .pin {
+    width: 34px; height: 34px;
+    border-radius: 50% 50% 50% 4px;
+    transform: rotate(-45deg);
+    border: 3px solid #fff;
+    box-shadow: 0 3px 8px rgba(14,31,26,.35);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s ease;
+  }
+  .pin span {
+    transform: rotate(45deg);
+    font-size: 15px; line-height: 1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.2));
+  }
+  .leaflet-marker-icon:hover .pin { transform: rotate(-45deg) scale(1.12); }
+
+  /* ===== Leafletポップアップの調整 ===== */
+  .leaflet-popup-content-wrapper {
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(14,31,26,.25);
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+  .leaflet-popup-content { margin: 14px 16px; min-width: 220px; }
+
+  /* ===== モバイル：ボトムシート ===== */
+  #sheet {
+    transition: transform .25s cubic-bezier(.2,.8,.2,1);
+    touch-action: none;
+    will-change: transform;
+  }
+  .sheet-handle { width: 44px; height: 5px; border-radius: 99px; }
+
+  /* フィルターチップの横スクロール（スクロールバー非表示） */
+  .chips { -ms-overflow-style: none; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+
+  /* リスト項目の選択状態 */
+  .spot-card.active { border-color: #E8A33D; background: #FDF6EA; }
+
+  /* キーボードフォーカス可視化 */
+  button:focus-visible, a:focus-visible, input:focus-visible {
+    outline: 3px solid #E8A33D; outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #sheet, .pin { transition: none; }
+  }
+</style>
+</head>
+
+<body class="bg-mist text-pine">
+
+<div class="h-full flex flex-col">
+
+  <!-- ===== ヘッダー ===== -->
+  <header class="shrink-0 bg-pine text-mist px-4 py-2.5 flex items-center gap-3 z-[1200] shadow-md">
+    <!-- 道路標識風ロゴ -->
+    <div class="flex items-center gap-2">
+      <div class="w-9 h-9 rounded-lg bg-lantern flex items-center justify-center font-maru font-black text-pine text-lg select-none" aria-hidden="true">旅</div>
+      <div class="leading-tight">
+        <h1 class="font-maru font-bold text-base sm:text-lg tracking-wide">くるま旅マップ</h1>
+        <p class="text-[10px] sm:text-[11px] text-mist/70 hidden sm:block">車中泊・キャンプスポット共有マップ</p>
+      </div>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <span id="spot-count" class="text-xs bg-pinedim rounded-full px-3 py-1 font-medium" aria-live="polite">読込中…</span>
+      <a href="https://github.com/your-name/your-repo" target="_blank" rel="noopener"
+         class="text-xs bg-mist/10 hover:bg-mist/20 rounded-full px-3 py-1 font-medium transition-colors hidden sm:inline-block">
+        GitHubでデータを見る
+      </a>
+    </div>
+  </header>
+
+  <!-- ===== 本体（PC: 2カラム / スマホ: マップ全面） ===== -->
+  <div class="flex-1 relative flex overflow-hidden">
+
+    <!-- ── PCサイドバー ── -->
+    <aside class="hidden md:flex md:flex-col w-[380px] shrink-0 bg-white border-r border-pine/10 z-[1100]">
+      <div class="p-4 border-b border-pine/10 space-y-3">
+        <p class="font-maru font-bold text-sm">カテゴリで絞り込む</p>
+        <div id="cat-filters-pc" class="flex flex-wrap gap-2"></div>
+        <p class="font-maru font-bold text-sm pt-1">設備で絞り込む</p>
+        <div id="fac-filters-pc" class="flex flex-wrap gap-2"></div>
+      </div>
+      <div id="spot-list-pc" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+    </aside>
+
+    <!-- ── マップ ── -->
+    <main class="flex-1 relative">
+      <div id="map" role="application" aria-label="スポットマップ"></div>
+
+      <!-- スマホ：上部フィルターチップ -->
+      <div class="md:hidden absolute top-2 left-0 right-0 z-[1000] px-2">
+        <div id="cat-filters-sp" class="chips flex gap-2 overflow-x-auto pb-1"></div>
+      </div>
+
+      <!-- 現在地ボタン -->
+      <button id="locate-btn" aria-label="現在地を表示"
+        class="absolute bottom-28 md:bottom-6 right-3 md:right-4 z-[1000] w-12 h-12 rounded-full bg-white shadow-lg border border-pine/15 flex items-center justify-center text-xl hover:bg-mist active:scale-95 transition">
+        📍
+      </button>
+    </main>
+  </div>
+</div>
+
+<!-- ===== スマホ：ボトムシート ===== -->
+<div id="sheet"
+     class="md:hidden fixed left-0 right-0 bottom-0 z-[1100] bg-white rounded-t-2xl shadow-[0_-8px_30px_rgba(14,31,26,.2)]"
+     style="height: 85vh; transform: translateY(calc(85vh - 96px));">
+  <div id="sheet-grip" class="pt-2.5 pb-1 flex flex-col items-center cursor-grab select-none">
+    <div class="sheet-handle bg-pine/20"></div>
+    <p class="font-maru font-bold text-sm mt-1.5">スポット一覧 <span id="sheet-count" class="text-lantern"></span></p>
+  </div>
+  <div class="px-3 pb-2">
+    <div id="fac-filters-sp" class="chips flex gap-2 overflow-x-auto"></div>
+  </div>
+  <div id="spot-list-sp" class="overflow-y-auto px-3 pb-24 space-y-2" style="height: calc(85vh - 96px);"></div>
+</div>
+
+<script>
+/* =====================================================================
+ * 設定
+ * ===================================================================== */
+const CONFIG = {
+  dataUrl: 'spots.json',
+  // 「この情報を修正する」リンク先（ご自身のリポジトリに変更してください）
+  githubEditUrl: 'https://github.com/your-name/your-repo/edit/main/spots.json',
+  initialView: { lat: 36.2, lng: 138.25, zoom: 6 }, // 日本全体
+};
+
+const CATEGORIES = {
+  michinoeki: { label: '道の駅',     icon: '🛣️', color: '#E8A33D' },
+  rvpark:     { label: 'RVパーク',   icon: '🚐', color: '#3B82A0' },
+  camp:       { label: 'キャンプ場', icon: '⛺', color: '#4C8C5C' },
+  view:       { label: '絶景スポット', icon: '🌄', color: '#7C6BAE' },
+  onsen:      { label: '温泉・入浴', icon: '♨️', color: '#C4604F' },
+  parking:    { label: '駐車場',     icon: '🅿️', color: '#6B7280' },
+};
+
+const FACILITIES = {
+  toilet: { label: 'トイレ', icon: '🚻' },
+  power:  { label: '電源',   icon: '🔌' },
+  bath:   { label: '入浴',   icon: '🛁' },
+  shop:   { label: '売店',   icon: '🏪' },
+  wifi:   { label: 'Wi-Fi',  icon: '📶' },
+  dump:   { label: 'ゴミ処理', icon: '🗑️' },
+};
+
+/* =====================================================================
+ * 状態
+ * ===================================================================== */
+let allSpots = [];
+let markers = {};            // id -> L.Marker
+const activeCats = new Set(Object.keys(CATEGORIES)); // 初期は全カテゴリON
+const activeFacs = new Set();                        // AND条件（空なら無視）
+
+/* =====================================================================
+ * マップ初期化（OpenStreetMap：APIキー不要）
+ * ===================================================================== */
+const map = L.map('map', {
+  zoomControl: false,
+  tap: true,
+}).setView([CONFIG.initialView.lat, CONFIG.initialView.lng], CONFIG.initialView.zoom);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+/* =====================================================================
+ * データ読込（fetch失敗時はサンプルデータにフォールバック）
+ * ===================================================================== */
+const SAMPLE_DATA = {
+  spots: [
+    { id: 'sample-001', name: '道の駅 みさと高原（サンプル）', category: 'michinoeki',
+      lat: 36.05, lng: 138.10, description: '標高900mの高原にある道の駅。夜は満天の星空。',
+      facilities: { toilet: true, shop: true }, openHours: '24時間（売店 9:00-17:00）', fee: '無料' },
+    { id: 'sample-002', name: 'RVパーク 湖畔ベース（サンプル）', category: 'rvpark',
+      lat: 35.50, lng: 138.76, description: '湖を望む電源付きRVパーク。要事前予約。',
+      facilities: { toilet: true, power: true, dump: true, wifi: true }, openHours: 'チェックイン 13:00-18:00', fee: '2,500円/泊' },
+    { id: 'sample-003', name: '星降る浜キャンプ場（サンプル）', category: 'camp',
+      lat: 34.68, lng: 138.94, description: '海沿いのフリーサイト。直火不可。',
+      facilities: { toilet: true, shop: true, bath: true }, openHours: '通年', fee: '1,000円/人' },
+  ]
+};
+
+async function loadSpots() {
+  try {
+    const res = await fetch(CONFIG.dataUrl, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    allSpots = data.spots || [];
+  } catch (e) {
+    console.warn('spots.json の読込に失敗したため、サンプルデータを表示します:', e.message);
+    allSpots = SAMPLE_DATA.spots;
+  }
+  buildFilters();
+  render();
+}
+
+/* =====================================================================
+ * フィルターUI生成
+ * ===================================================================== */
+function catChip(key, compact = false) {
+  const c = CATEGORIES[key];
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.dataset.cat = key;
+  btn.className = 'cat-chip shrink-0 flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-xs font-bold font-maru transition-all whitespace-nowrap bg-white';
+  btn.innerHTML = `<span>${c.icon}</span>${c.label}`;
+  btn.addEventListener('click', () => {
+    activeCats.has(key) ? activeCats.delete(key) : activeCats.add(key);
+    syncChipStyles(); render();
+  });
+  return btn;
+}
+
+function facChip(key) {
+  const f = FACILITIES[key];
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.dataset.fac = key;
+  btn.className = 'fac-chip shrink-0 flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap bg-white border-pine/20 text-pine/70';
+  btn.innerHTML = `<span>${f.icon}</span>${f.label}`;
+  btn.addEventListener('click', () => {
+    activeFacs.has(key) ? activeFacs.delete(key) : activeFacs.add(key);
+    syncChipStyles(); render();
+  });
+  return btn;
+}
+
+function buildFilters() {
+  const catPC = document.getElementById('cat-filters-pc');
+  const catSP = document.getElementById('cat-filters-sp');
+  const facPC = document.getElementById('fac-filters-pc');
+  const facSP = document.getElementById('fac-filters-sp');
+  Object.keys(CATEGORIES).forEach(k => { catPC.appendChild(catChip(k)); catSP.appendChild(catChip(k, true)); });
+  Object.keys(FACILITIES).forEach(k => { facPC.appendChild(facChip(k)); facSP.appendChild(facChip(k)); });
+  syncChipStyles();
+}
+
+function syncChipStyles() {
+  document.querySelectorAll('.cat-chip').forEach(btn => {
+    const key = btn.dataset.cat, c = CATEGORIES[key], on = activeCats.has(key);
+    btn.style.borderColor = on ? c.color : 'rgba(22,53,43,.15)';
+    btn.style.background  = on ? c.color : '#fff';
+    btn.style.color       = on ? '#fff'  : 'rgba(22,53,43,.55)';
+    btn.setAttribute('aria-pressed', on);
+  });
+  document.querySelectorAll('.fac-chip').forEach(btn => {
+    const on = activeFacs.has(btn.dataset.fac);
+    btn.classList.toggle('bg-lantern', on);
+    btn.classList.toggle('border-lantern', on);
+    btn.classList.toggle('text-white', on);
+    btn.classList.toggle('bg-white', !on);
+    btn.setAttribute('aria-pressed', on);
+  });
+}
+
+/* =====================================================================
+ * フィルタリング・描画
+ * ===================================================================== */
+function filteredSpots() {
+  return allSpots.filter(s => {
+    if (!activeCats.has(s.category)) return false;
+    for (const f of activeFacs) {
+      if (!s.facilities || !s.facilities[f]) return false; // AND条件
+    }
+    return true;
+  });
+}
+
+function makeIcon(category) {
+  const c = CATEGORIES[category] || { color: '#6B7280', icon: '📌' };
+  return L.divIcon({
+    className: '',
+    html: `<div class="pin" style="background:${c.color}"><span>${c.icon}</span></div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 34],
+    popupAnchor: [0, -36],
+  });
+}
+
+function facilityBadges(spot) {
+  return Object.entries(FACILITIES).map(([k, f]) => {
+    const has = spot.facilities && spot.facilities[k];
+    return `<span class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] ${has ? 'bg-pine/10 text-pine font-medium' : 'bg-gray-100 text-gray-300 line-through'}">${f.icon} ${f.label}</span>`;
+  }).join(' ');
+}
+
+function popupHtml(spot) {
+  const c = CATEGORIES[spot.category] || {};
+  return `
+    <div class="space-y-2">
+      <div>
+        <span class="inline-block text-[10px] font-bold text-white rounded-full px-2 py-0.5 mb-1" style="background:${c.color}">${c.icon || ''} ${c.label || spot.category}</span>
+        <h3 class="font-bold text-[15px] leading-snug" style="font-family:'Zen Maru Gothic',sans-serif">${esc(spot.name)}</h3>
+      </div>
+      ${spot.description ? `<p class="text-xs text-gray-600 leading-relaxed">${esc(spot.description)}</p>` : ''}
+      <div class="flex flex-wrap gap-1">${facilityBadges(spot)}</div>
+      <dl class="text-xs text-gray-600 space-y-0.5">
+        ${spot.openHours ? `<div><dt class="inline font-bold">営業: </dt><dd class="inline">${esc(spot.openHours)}</dd></div>` : ''}
+        ${spot.fee ? `<div><dt class="inline font-bold">料金: </dt><dd class="inline">${esc(spot.fee)}</dd></div>` : ''}
+        ${spot.notes ? `<div><dt class="inline font-bold">備考: </dt><dd class="inline">${esc(spot.notes)}</dd></div>` : ''}
+      </dl>
+      <div class="flex gap-2 pt-1">
+        <a href="https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}" target="_blank" rel="noopener"
+           class="flex-1 text-center text-xs font-bold text-white rounded-lg px-2 py-1.5" style="background:#16352B">経路を調べる</a>
+        <a href="${CONFIG.githubEditUrl}" target="_blank" rel="noopener"
+           class="flex-1 text-center text-xs font-bold rounded-lg px-2 py-1.5 border-2" style="border-color:#E8A33D;color:#B97F25">✏️ この情報を修正する</a>
+      </div>
+    </div>`;
+}
+
+function spotCard(spot) {
+  const c = CATEGORIES[spot.category] || {};
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.dataset.id = spot.id;
+  el.className = 'spot-card w-full text-left bg-white rounded-xl border-2 border-pine/10 p-3 hover:border-lantern/60 transition-colors';
+  el.innerHTML = `
+    <div class="flex items-start gap-2.5">
+      <span class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base" style="background:${c.color}22">${c.icon || '📌'}</span>
+      <div class="min-w-0">
+        <p class="font-maru font-bold text-sm leading-snug truncate">${esc(spot.name)}</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">${c.label || ''}${spot.fee ? ' ・ ' + esc(spot.fee) : ''}</p>
+        <div class="flex flex-wrap gap-1 mt-1.5">${
+          Object.entries(FACILITIES)
+            .filter(([k]) => spot.facilities && spot.facilities[k])
+            .map(([, f]) => `<span class="text-[10px] bg-mist rounded px-1 py-0.5">${f.icon}${f.label}</span>`).join('')
+        }</div>
+      </div>
+    </div>`;
+  el.addEventListener('click', () => focusSpot(spot.id, true));
+  return el;
+}
+
+function render() {
+  // マーカー再構築
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  const spots = filteredSpots();
+
+  spots.forEach(spot => {
+    const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
+      .addTo(map)
+      .bindPopup(popupHtml(spot), { closeButton: true, autoPanPadding: [30, 60] });
+    m.on('click', () => highlightCard(spot.id));
+    markers[spot.id] = m;
+  });
+
+  // リスト再構築（PC・スマホ）
+  for (const id of ['spot-list-pc', 'spot-list-sp']) {
+    const list = document.getElementById(id);
+    list.innerHTML = '';
+    if (spots.length === 0) {
+      list.innerHTML = `<div class="text-center text-sm text-gray-400 py-10">条件に合うスポットがありません。<br>フィルターを変更してみてください。</div>`;
+    } else {
+      spots.forEach(s => list.appendChild(spotCard(s)));
+    }
+  }
+
+  // 件数表示
+  document.getElementById('spot-count').textContent = `${spots.length} / ${allSpots.length} 件`;
+  document.getElementById('sheet-count').textContent = `(${spots.length})`;
+}
+
+function focusSpot(id, fromList = false) {
+  const m = markers[id];
+  if (!m) return;
+  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), { duration: 0.6 });
+  m.openPopup();
+  highlightCard(id);
+  if (fromList && window.innerWidth < 768) setSheet('peek'); // スマホはシートを下げてマップを見せる
+}
+
+function highlightCard(id) {
+  document.querySelectorAll('.spot-card').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === id);
+  });
+}
+
+/* =====================================================================
+ * 現在地取得
+ * ===================================================================== */
+let myLocationMarker = null;
+document.getElementById('locate-btn').addEventListener('click', () => {
+  if (!navigator.geolocation) { alert('お使いのブラウザは位置情報に対応していません。'); return; }
+  const btn = document.getElementById('locate-btn');
+  btn.textContent = '⏳';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      if (myLocationMarker) map.removeLayer(myLocationMarker);
+      myLocationMarker = L.layerGroup([
+        L.circle([latitude, longitude], { radius: accuracy, color: '#3B82A0', weight: 1, fillOpacity: 0.1 }),
+        L.circleMarker([latitude, longitude], { radius: 8, color: '#fff', weight: 3, fillColor: '#3B82A0', fillOpacity: 1 }),
+      ]).addTo(map);
+      map.flyTo([latitude, longitude], 13, { duration: 0.8 });
+      btn.textContent = '📍';
+    },
+    err => {
+      alert('現在地を取得できませんでした。位置情報の利用を許可してください。');
+      btn.textContent = '📍';
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+/* =====================================================================
+ * スマホ：ボトムシート（ドラッグ＆タップで peek / half / full）
+ * ===================================================================== */
+const sheet = document.getElementById('sheet');
+const grip = document.getElementById('sheet-grip');
+const SHEET_H = () => sheet.getBoundingClientRect().height;
+const SNAP = { peek: () => SHEET_H() - 96, half: () => SHEET_H() * 0.5, full: () => 0 };
+let sheetState = 'peek';
+
+function setSheet(state) {
+  sheetState = state;
+  sheet.style.transform = `translateY(${SNAP[state]()}px)`;
+}
+
+grip.addEventListener('click', () => setSheet(sheetState === 'peek' ? 'half' : 'peek'));
+
+let dragStartY = null, dragStartOffset = 0;
+grip.addEventListener('pointerdown', e => {
+  dragStartY = e.clientY;
+  dragStartOffset = SNAP[sheetState]();
+  sheet.style.transition = 'none';
+  grip.setPointerCapture(e.pointerId);
+});
+grip.addEventListener('pointermove', e => {
+  if (dragStartY === null) return;
+  const offset = Math.min(Math.max(dragStartOffset + (e.clientY - dragStartY), 0), SHEET_H() - 60);
+  sheet.style.transform = `translateY(${offset}px)`;
+});
+grip.addEventListener('pointerup', e => {
+  if (dragStartY === null) return;
+  const moved = e.clientY - dragStartY;
+  sheet.style.transition = '';
+  // 移動方向でスナップ先を決定
+  const order = ['full', 'half', 'peek'];
+  let idx = order.indexOf(sheetState);
+  if (moved > 50) idx = Math.min(idx + 1, 2);
+  else if (moved < -50) idx = Math.max(idx - 1, 0);
+  setSheet(order[idx]);
+  dragStartY = null;
+});
+
+/* =====================================================================
+ * ユーティリティ
+ * ===================================================================== */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+window.addEventListener('resize', () => { if (window.innerWidth < 768) setSheet(sheetState); });
+
+loadSpots();
+</script>
+</body>
+</html>
