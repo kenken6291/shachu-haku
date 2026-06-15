@@ -26,7 +26,7 @@
       "openHours": "駐車場24時間（売店 9:00-19:00）",
       "fee": "無料",
       "notes": "週末は混雑。アイドリングは控えめに。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     },
     {
       "id": "rvpark-lakeside-base",
@@ -39,7 +39,7 @@
       "openHours": "チェックイン 13:00-18:00 / チェックアウト 11:00",
       "fee": "2,500円/泊",
       "notes": "要事前予約（公式サイトから）。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     },
     {
       "id": "camp-hoshifuru-hama",
@@ -52,7 +52,7 @@
       "openHours": "通年営業（受付 8:00-17:00）",
       "fee": "1,000円/人",
       "notes": "直火不可・焚き火台のみ可。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     },
     {
       "id": "view-bibanba-pass",
@@ -65,7 +65,7 @@
       "openHours": "通行可能期間: 4月下旬〜11月（冬季閉鎖）",
       "fee": "無料",
       "notes": "夜間は冷え込むため防寒必須。宿泊不可・休憩のみ。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     },
     {
       "id": "onsen-akane-no-yu",
@@ -78,7 +78,7 @@
       "openHours": "10:00-22:00（最終受付 21:00）",
       "fee": "入浴 800円",
       "notes": "駐車場での仮眠は不可。入浴のみ。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     },
     {
       "id": "parking-kawara-24h",
@@ -91,7 +91,7 @@
       "openHours": "24時間",
       "fee": "上限 1,200円/日",
       "notes": "車中泊の可否は現地掲示を確認してください。",
-      "addedBy": "your-name"
+      "addedBy": "kenken6291"
     }
   ]
 }
