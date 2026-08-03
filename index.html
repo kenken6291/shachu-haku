@@ -90,6 +90,29 @@
   @media (prefers-reduced-motion: reduce) {
     #sheet, .pin { transition: none; }
   }
+
+  /* ===== 会員機能：モーダル・フォーム ===== */
+  .auth-input {
+    width: 100%; border-radius: 10px; border: 2px solid rgba(22,53,43,.15);
+    padding: 9px 12px; font-size: 14px; background: #fff;
+  }
+  .auth-input:focus { outline: none; border-color: #E8A33D; }
+  .auth-label { display:block; font-size: 12px; font-weight: 700; color: #16352B; margin-bottom: 4px; }
+  .auth-btn-primary {
+    width: 100%; border-radius: 10px; padding: 10px 14px; font-weight: 700; font-size: 14px;
+    color: #fff; background: #16352B; transition: filter .15s;
+  }
+  .auth-btn-primary:hover { filter: brightness(1.15); }
+  .auth-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .auth-btn-link { font-size: 12px; color: #B97F25; font-weight: 700; text-decoration: underline; }
+  .auth-error { font-size: 12px; color: #C4604F; font-weight: 700; min-height: 16px; }
+  .pw-field { position: relative; }
+  .pw-toggle {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 12px; color: #16352B99; background: none; border: none; cursor: pointer; padding: 4px;
+  }
+  .comment-item { border-top: 1px solid rgba(22,53,43,.08); padding: 8px 0; }
+  .comment-item:first-child { border-top: none; }
 </style>
 </head>
 
@@ -109,6 +132,7 @@
     </div>
     <div class="ml-auto flex items-center gap-2">
       <span id="spot-count" class="text-xs bg-pinedim rounded-full px-3 py-1 font-medium" aria-live="polite">読込中…</span>
+      <div id="auth-area" class="flex items-center gap-1.5"></div>
       <a href="https://github.com/kenken6291/shachu-haku/" target="_blank" rel="noopener"
          class="text-xs bg-mist/10 hover:bg-mist/20 rounded-full px-3 py-1 font-medium transition-colors hidden sm:inline-block">
         GitHubでデータを見る
@@ -144,6 +168,12 @@
         class="absolute bottom-28 md:bottom-6 right-3 md:right-4 z-[1000] w-12 h-12 rounded-full bg-white shadow-lg border border-pine/15 flex items-center justify-center text-xl hover:bg-mist active:scale-95 transition">
         📍
       </button>
+
+      <!-- スポット投稿ボタン（会員ログイン時のみ表示） -->
+      <button id="post-spot-btn" aria-label="スポットを投稿" hidden
+        class="absolute bottom-44 md:bottom-24 right-3 md:right-4 z-[1000] h-12 pl-3 pr-4 rounded-full bg-lantern text-white shadow-lg flex items-center gap-1.5 text-sm font-bold font-maru hover:brightness-105 active:scale-95 transition">
+        <span class="text-lg leading-none">📍+</span>投稿する
+      </button>
     </main>
   </div>
 </div>
@@ -162,6 +192,14 @@
   <div id="spot-list-sp" class="overflow-y-auto px-3 pb-24 space-y-2" style="height: calc(85vh - 96px);"></div>
 </div>
 
+<!-- ===== 会員機能：共通モーダル ===== -->
+<div id="modal-overlay" hidden
+     class="fixed inset-0 z-[1400] bg-nightsky/60 flex items-center justify-center p-4">
+  <div id="modal-box"
+       class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 sm:p-6 relative">
+  </div>
+</div>
+
 <script>
 /* =====================================================================
  * 設定
@@ -171,7 +209,20 @@ const CONFIG = {
   // 「この情報を修正する」リンク先（ご自身のリポジトリに変更してください）
   githubEditUrl: 'https://github.com/kenken6291/shachu-haku/edit/main/spots.json',
   initialView: { lat: 36.2, lng: 138.25, zoom: 6 }, // 日本全体
+  // GASウェブアプリのURL（Code.gs をデプロイして発行されたURLに置き換えてください）
+  gasUrl: 'https://script.google.com/macros/s/AKfycbyKm4WC6C-EXBpe-DBji5zPcWfMuZiVovTZPV3L346Hh5wBIwpL7aa1WWEiyZQ0JMHplg/exec',
 };
+
+const TERMS_TEXT = `【ご利用にあたっての注意事項】
+・投稿できる情報は、実際に訪問・確認した内容としてください。
+・私有地や許可のない場所への駐車・宿泊を助長する投稿は禁止です。
+・現地のルール、マナー、条例を必ず遵守してください。
+・他の利用者への誹謗中傷、個人情報の掲載は禁止です。
+
+【免責事項】
+・掲載されている情報の正確性・最新性は保証されません。ご利用の際は必ず現地の最新情報をご確認ください。
+・本サービスの利用により生じたいかなる損害についても、運営者は責任を負いません。
+・投稿内容は運営者の判断により、予告なく編集・削除する場合があります。`;
 
 const CATEGORIES = {
   michinoeki: { label: '道の駅',     icon: '🛣️', color: '#E8A33D' },
@@ -198,6 +249,9 @@ let allSpots = [];
 let markers = {};            // id -> L.Marker
 const activeCats = new Set(Object.keys(CATEGORIES)); // 初期は全カテゴリON
 const activeFacs = new Set();                        // AND条件（空なら無視）
+
+/* ===== 会員機能：状態 ===== */
+const auth = { token: null, userId: null, nickname: null, mustChangePassword: false };
 
 /* =====================================================================
  * マップ初期化（OpenStreetMap：APIキー不要）
@@ -236,11 +290,19 @@ async function loadSpots() {
     const res = await fetch(CONFIG.dataUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    allSpots = data.spots || [];
+    allSpots = (data.spots || []).map(s => ({ ...s, source: 'static' }));
   } catch (e) {
     console.warn('spots.json の読込に失敗したため、サンプルデータを表示します:', e.message);
-    allSpots = SAMPLE_DATA.spots;
+    allSpots = SAMPLE_DATA.spots.map(s => ({ ...s, source: 'static' }));
   }
+
+  try {
+    const memberSpots = await loadMemberSpots();
+    allSpots = allSpots.concat(memberSpots);
+  } catch (e) {
+    console.warn('会員投稿スポットの読込に失敗しました:', e.message);
+  }
+
   buildFilters();
   render();
 }
@@ -337,11 +399,16 @@ function facilityBadges(spot) {
 
 function popupHtml(spot) {
   const c = CATEGORIES[spot.category] || {};
+  const isMember = spot.source === 'member';
+  const isOwner = isMember && auth.userId && spot.authorId === auth.userId;
+  const editUrl = isMember ? null : CONFIG.githubEditUrl;
+
   return `
     <div class="space-y-2">
       <div>
         <span class="inline-block text-[10px] font-bold text-white rounded-full px-2 py-0.5 mb-1" style="background:${c.color}">${c.icon || ''} ${c.label || spot.category}</span>
         <h3 class="font-bold text-[15px] leading-snug" style="font-family:'Zen Maru Gothic',sans-serif">${esc(spot.name)}</h3>
+        ${isMember ? `<p class="text-[11px] text-gray-400 mt-0.5">投稿者: ${esc(spot.authorNickname || '会員')}</p>` : ''}
       </div>
       ${spot.description ? `<p class="text-xs text-gray-600 leading-relaxed">${esc(spot.description)}</p>` : ''}
       <div class="flex flex-wrap gap-1">${facilityBadges(spot)}</div>
@@ -353,8 +420,27 @@ function popupHtml(spot) {
       <div class="flex gap-2 pt-1">
         <a href="https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}" target="_blank" rel="noopener"
            class="flex-1 text-center text-xs font-bold text-white rounded-lg px-2 py-1.5" style="background:#16352B">経路を調べる</a>
-        <a href="${CONFIG.githubEditUrl}" target="_blank" rel="noopener"
-           class="flex-1 text-center text-xs font-bold rounded-lg px-2 py-1.5 border-2" style="border-color:#E8A33D;color:#B97F25">✏️ この情報を修正する</a>
+        ${editUrl ? `<a href="${editUrl}" target="_blank" rel="noopener"
+           class="flex-1 text-center text-xs font-bold rounded-lg px-2 py-1.5 border-2" style="border-color:#E8A33D;color:#B97F25">✏️ この情報を修正する</a>` : ''}
+      </div>
+      ${isOwner ? `
+      <div class="flex gap-2">
+        <button type="button" onclick="openEditSpotModal('${spot.id}')"
+          class="flex-1 text-center text-xs font-bold rounded-lg px-2 py-1.5 border-2" style="border-color:#3B82A0;color:#3B82A0">編集する</button>
+        <button type="button" onclick="handleDeleteSpot('${spot.id}')"
+          class="flex-1 text-center text-xs font-bold rounded-lg px-2 py-1.5 border-2" style="border-color:#C4604F;color:#C4604F">削除する</button>
+      </div>` : ''}
+      <div class="pt-2 border-t border-pine/10">
+        <p class="text-xs font-bold text-pine mb-1">💬 コメント</p>
+        <div id="comments-${spot.id}" class="comments-list text-xs text-gray-500">読み込み中…</div>
+        ${auth.token ? `
+        <div class="flex gap-1.5 mt-2">
+          <input type="text" id="comment-input-${spot.id}" placeholder="コメントを書く…" maxlength="300"
+            class="auth-input flex-1 !py-1.5 !text-xs" />
+          <button type="button" onclick="handleAddComment('${spot.id}')"
+            class="shrink-0 rounded-lg px-3 text-xs font-bold text-white" style="background:#E8A33D">送信</button>
+        </div>` : `
+        <p class="text-[11px] text-gray-400 mt-1.5">コメントするには<button type="button" class="auth-btn-link" onclick="openLoginModal()">ログイン</button>してください</p>`}
       </div>
     </div>`;
 }
@@ -392,6 +478,7 @@ function render() {
     const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
       .addTo(map)
       .bindPopup(popupHtml(spot), { closeButton: true, autoPanPadding: [30, 60] });
+    m.spotId = spot.id;
     m.on('click', () => highlightCard(spot.id));
     markers[spot.id] = m;
   });
@@ -504,6 +591,567 @@ function esc(s) {
 
 window.addEventListener('resize', () => { if (window.innerWidth < 768) setSheet(sheetState); });
 
+/* =====================================================================
+ * 会員機能：API通信
+ * ===================================================================== */
+async function callApi(action, payload = {}) {
+  const res = await fetch(CONFIG.gasUrl, {
+    method: 'POST',
+    // text/plain にすることでプリフライト(OPTIONS)を回避（GAS標準パターン）
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function loadMemberSpots() {
+  const res = await fetch(CONFIG.gasUrl + '?action=listSpots', { cache: 'no-cache' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  return json.ok ? json.spots : [];
+}
+
+/* =====================================================================
+ * 会員機能：セッション管理
+ * ===================================================================== */
+function saveSession() {
+  localStorage.setItem('kurumatabi_auth', JSON.stringify({ token: auth.token, userId: auth.userId, nickname: auth.nickname }));
+}
+function clearSession() {
+  localStorage.removeItem('kurumatabi_auth');
+  auth.token = null; auth.userId = null; auth.nickname = null; auth.mustChangePassword = false;
+}
+async function restoreSession() {
+  const raw = localStorage.getItem('kurumatabi_auth');
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    auth.token = saved.token; auth.userId = saved.userId; auth.nickname = saved.nickname;
+    const res = await callApi('me', { token: auth.token });
+    if (!res.ok) { clearSession(); return; }
+    auth.nickname = res.nickname; auth.userId = res.userId; auth.mustChangePassword = res.mustChangePassword;
+    if (auth.mustChangePassword) openChangePasswordModal(true);
+  } catch (e) {
+    clearSession();
+  }
+  renderAuthArea();
+}
+
+function renderAuthArea() {
+  const el = document.getElementById('auth-area');
+  const postBtn = document.getElementById('post-spot-btn');
+  if (auth.token) {
+    postBtn.hidden = false;
+    el.innerHTML = `
+      <div class="relative">
+        <button id="account-menu-btn" type="button"
+          class="text-xs bg-mist/10 hover:bg-mist/20 rounded-full px-3 py-1 font-medium transition-colors flex items-center gap-1">
+          👤 ${esc(auth.nickname)} さん ▾
+        </button>
+        <div id="account-menu" hidden
+          class="absolute right-0 mt-1.5 w-40 bg-white rounded-xl shadow-xl border border-pine/10 py-1.5 z-[1300] text-pine">
+          <button type="button" onclick="openMyPageModal()" class="w-full text-left px-3 py-2 text-xs font-bold hover:bg-mist">マイページ</button>
+          <button type="button" onclick="handleLogout()" class="w-full text-left px-3 py-2 text-xs font-bold hover:bg-mist text-[#C4604F]">ログアウト</button>
+        </div>
+      </div>`;
+    document.getElementById('account-menu-btn').addEventListener('click', () => {
+      const menu = document.getElementById('account-menu');
+      menu.hidden = !menu.hidden;
+    });
+  } else {
+    postBtn.hidden = true;
+    el.innerHTML = `
+      <button type="button" onclick="openLoginModal()" class="text-xs bg-mist/10 hover:bg-mist/20 rounded-full px-3 py-1 font-medium transition-colors">ログイン</button>
+      <button type="button" onclick="openRegisterModal()" class="text-xs bg-lantern text-white hover:brightness-105 rounded-full px-3 py-1 font-bold transition-colors">会員登録</button>`;
+  }
+}
+
+document.addEventListener('click', e => {
+  const menu = document.getElementById('account-menu');
+  const btn = document.getElementById('account-menu-btn');
+  if (menu && !menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
+});
+
+function handleLogout() {
+  clearSession();
+  renderAuthArea();
+  render();
+}
+
+/* =====================================================================
+ * 会員機能：モーダル基盤
+ * ===================================================================== */
+function openModal(html) {
+  document.getElementById('modal-box').innerHTML = html;
+  document.getElementById('modal-overlay').hidden = false;
+}
+function closeModal() {
+  document.getElementById('modal-overlay').hidden = true;
+  document.getElementById('modal-box').innerHTML = '';
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target.id === 'modal-overlay') closeModal();
+});
+
+function togglePw(btn) {
+  const input = btn.previousElementSibling;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  btn.textContent = show ? '隠す' : '表示';
+}
+
+function pwFieldHtml(id, labelText) {
+  return `
+    <div>
+      <label class="auth-label" for="${id}">${labelText}</label>
+      <div class="pw-field">
+        <input id="${id}" type="password" class="auth-input pr-14" autocomplete="off" />
+        <button type="button" class="pw-toggle" onclick="togglePw(this)">表示</button>
+      </div>
+    </div>`;
+}
+
+/* ---------- 会員登録 ---------- */
+function openRegisterModal() {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">会員登録</h2>
+    <div class="space-y-3">
+      <div>
+        <label class="auth-label" for="reg-email">メールアドレス</label>
+        <input id="reg-email" type="email" class="auth-input" autocomplete="email" />
+      </div>
+      <div>
+        <label class="auth-label" for="reg-nickname">ニックネーム（表示名）</label>
+        <input id="reg-nickname" type="text" class="auth-input" maxlength="20" />
+      </div>
+      <div class="bg-mist rounded-lg p-3 max-h-32 overflow-y-auto text-[11px] text-gray-600 whitespace-pre-wrap leading-relaxed">${esc(TERMS_TEXT)}</div>
+      <label class="flex items-center gap-2 text-xs font-medium">
+        <input id="reg-agree" type="checkbox" class="w-4 h-4" />
+        注意事項・免責事項に同意します
+      </label>
+      <p id="reg-error" class="auth-error"></p>
+      <button type="button" id="reg-submit" class="auth-btn-primary" onclick="handleRegister()">仮パスワードを発行してメールで受け取る</button>
+      <p class="text-center text-xs">すでに会員の方は <button type="button" class="auth-btn-link" onclick="openLoginModal()">ログイン</button></p>
+    </div>`);
+}
+
+async function handleRegister() {
+  const email = document.getElementById('reg-email').value.trim();
+  const nickname = document.getElementById('reg-nickname').value.trim();
+  const agreed = document.getElementById('reg-agree').checked;
+  const errEl = document.getElementById('reg-error');
+  errEl.textContent = '';
+  if (!email || !nickname) { errEl.textContent = 'メールアドレスとニックネームを入力してください。'; return; }
+  if (!agreed) { errEl.textContent = '注意事項・免責事項への同意が必要です。'; return; }
+
+  const btn = document.getElementById('reg-submit');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    const res = await callApi('register', { email, nickname, agreedTerms: true });
+    if (!res.ok) {
+      errEl.textContent = res.error === 'email_taken' ? 'このメールアドレスは既に登録されています。' : '登録に失敗しました。入力内容をご確認ください。';
+      btn.disabled = false; btn.textContent = '仮パスワードを発行してメールで受け取る';
+      return;
+    }
+    openModal(`
+      <h2 class="font-maru font-bold text-lg mb-2">登録完了</h2>
+      <p class="text-sm text-gray-600 leading-relaxed">仮パスワードをメールで送信しました。メールをご確認のうえ、ログインしてください。</p>
+      <button type="button" class="auth-btn-primary mt-4" onclick="openLoginModal()">ログイン画面へ</button>`);
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = '仮パスワードを発行してメールで受け取る';
+  }
+}
+
+/* ---------- ログイン ---------- */
+function openLoginModal() {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">ログイン</h2>
+    <div class="space-y-3">
+      <div>
+        <label class="auth-label" for="login-email">メールアドレス</label>
+        <input id="login-email" type="email" class="auth-input" autocomplete="email" />
+      </div>
+      ${pwFieldHtml('login-password', 'パスワード（仮パスワード可）')}
+      <p id="login-error" class="auth-error"></p>
+      <button type="button" id="login-submit" class="auth-btn-primary" onclick="handleLogin()">ログイン</button>
+      <div class="flex justify-between text-xs pt-1">
+        <button type="button" class="auth-btn-link" onclick="openForgotPasswordModal()">パスワードを忘れた方</button>
+        <button type="button" class="auth-btn-link" onclick="openRegisterModal()">新規会員登録</button>
+      </div>
+    </div>`);
+}
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'メールアドレスとパスワードを入力してください。'; return; }
+
+  const btn = document.getElementById('login-submit');
+  btn.disabled = true; btn.textContent = 'ログイン中…';
+  try {
+    const res = await callApi('login', { email, password });
+    if (!res.ok) {
+      errEl.textContent = 'メールアドレスまたはパスワードが正しくありません。';
+      btn.disabled = false; btn.textContent = 'ログイン';
+      return;
+    }
+    auth.token = res.token; auth.userId = res.userId; auth.nickname = res.nickname; auth.mustChangePassword = res.mustChangePassword;
+    saveSession();
+    renderAuthArea();
+    render();
+    if (auth.mustChangePassword) {
+      openChangePasswordModal(true);
+    } else {
+      closeModal();
+    }
+    loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(() => {});
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = 'ログイン';
+  }
+}
+
+/* ---------- パスワード再発行 ---------- */
+function openForgotPasswordModal() {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">パスワードを忘れた方</h2>
+    <p class="text-xs text-gray-500 mb-3">登録済みのメールアドレスに、新しい仮パスワードを送信します。</p>
+    <div class="space-y-3">
+      <div>
+        <label class="auth-label" for="forgot-email">メールアドレス</label>
+        <input id="forgot-email" type="email" class="auth-input" autocomplete="email" />
+      </div>
+      <p id="forgot-error" class="auth-error"></p>
+      <button type="button" id="forgot-submit" class="auth-btn-primary" onclick="handleForgotPassword()">仮パスワードを再発行する</button>
+      <p class="text-center text-xs"><button type="button" class="auth-btn-link" onclick="openLoginModal()">ログイン画面に戻る</button></p>
+    </div>`);
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById('forgot-email').value.trim();
+  const errEl = document.getElementById('forgot-error');
+  errEl.textContent = '';
+  if (!email) { errEl.textContent = 'メールアドレスを入力してください。'; return; }
+
+  const btn = document.getElementById('forgot-submit');
+  btn.disabled = true; btn.textContent = '送信中…';
+  try {
+    await callApi('forgotPassword', { email });
+    openModal(`
+      <h2 class="font-maru font-bold text-lg mb-2">送信しました</h2>
+      <p class="text-sm text-gray-600 leading-relaxed">登録がある場合、新しい仮パスワードをメールで送信しました。メールをご確認のうえ、ログインしてください。</p>
+      <button type="button" class="auth-btn-primary mt-4" onclick="openLoginModal()">ログイン画面へ</button>`);
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = '仮パスワードを再発行する';
+  }
+}
+
+/* ---------- 初回ログイン時 / マイページからのパスワード変更 ---------- */
+function openChangePasswordModal(forced = false) {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-2">パスワード変更</h2>
+    ${forced ? `<p class="text-xs text-gray-500 mb-3">初回ログインです。新しいパスワードを設定してください。</p>` : ''}
+    <div class="space-y-3">
+      ${pwFieldHtml('newpw-1', '新しいパスワード（8文字以上）')}
+      ${pwFieldHtml('newpw-2', '新しいパスワード（確認）')}
+      <p id="newpw-error" class="auth-error"></p>
+      <button type="button" id="newpw-submit" class="auth-btn-primary" onclick="handleChangePassword(${forced})">変更する</button>
+      ${!forced ? `<p class="text-center text-xs"><button type="button" class="auth-btn-link" onclick="openMyPageModal()">戻る</button></p>` : ''}
+    </div>`);
+}
+
+async function handleChangePassword(forced) {
+  const p1 = document.getElementById('newpw-1').value;
+  const p2 = document.getElementById('newpw-2').value;
+  const errEl = document.getElementById('newpw-error');
+  errEl.textContent = '';
+  if (p1.length < 8) { errEl.textContent = '8文字以上で入力してください。'; return; }
+  if (p1 !== p2) { errEl.textContent = '確認用パスワードが一致しません。'; return; }
+
+  const btn = document.getElementById('newpw-submit');
+  btn.disabled = true; btn.textContent = '変更中…';
+  try {
+    const res = await callApi('changePassword', { token: auth.token, newPassword: p1 });
+    if (!res.ok) { errEl.textContent = '変更に失敗しました。'; btn.disabled = false; btn.textContent = '変更する'; return; }
+    auth.mustChangePassword = false;
+    if (forced) { closeModal(); } else { openMyPageModal('パスワードを変更しました。'); }
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = '変更する';
+  }
+}
+
+/* ---------- マイページ（ニックネーム変更） ---------- */
+function openMyPageModal(message = '') {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">マイページ</h2>
+    ${message ? `<p class="text-xs font-bold text-[#4C8C5C] mb-3">${esc(message)}</p>` : ''}
+    <div class="space-y-3">
+      <div>
+        <label class="auth-label" for="mypage-nickname">ニックネーム</label>
+        <input id="mypage-nickname" type="text" class="auth-input" maxlength="20" value="${esc(auth.nickname)}" />
+      </div>
+      <p id="mypage-error" class="auth-error"></p>
+      <button type="button" id="mypage-submit" class="auth-btn-primary" onclick="handleUpdateNickname()">ニックネームを変更する</button>
+      <hr class="border-pine/10" />
+      <button type="button" class="auth-btn-primary" style="background:#3B82A0" onclick="openChangePasswordModal(false)">パスワードを変更する</button>
+    </div>`);
+}
+
+async function handleUpdateNickname() {
+  const nickname = document.getElementById('mypage-nickname').value.trim();
+  const errEl = document.getElementById('mypage-error');
+  errEl.textContent = '';
+  if (!nickname) { errEl.textContent = 'ニックネームを入力してください。'; return; }
+
+  const btn = document.getElementById('mypage-submit');
+  btn.disabled = true; btn.textContent = '変更中…';
+  try {
+    const res = await callApi('updateNickname', { token: auth.token, nickname });
+    if (!res.ok) { errEl.textContent = '変更に失敗しました。'; btn.disabled = false; btn.textContent = 'ニックネームを変更する'; return; }
+    auth.nickname = res.nickname;
+    saveSession();
+    renderAuthArea();
+    openMyPageModal('ニックネームを変更しました。');
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = 'ニックネームを変更する';
+  }
+}
+
+/* =====================================================================
+ * 会員機能：スポット投稿・編集・削除
+ * ===================================================================== */
+function spotFormFields(spot = {}) {
+  const catOptions = Object.entries(CATEGORIES).map(([k, c]) =>
+    `<option value="${k}" ${spot.category === k ? 'selected' : ''}>${c.icon} ${c.label}</option>`).join('');
+  const facChecks = Object.entries(FACILITIES).map(([k, f]) => `
+    <label class="flex items-center gap-1 text-xs bg-mist rounded-lg px-2 py-1.5">
+      <input type="checkbox" data-fac="${k}" class="spot-fac-check" ${spot.facilities && spot.facilities[k] ? 'checked' : ''} /> ${f.icon} ${f.label}
+    </label>`).join('');
+  return `
+    <div class="space-y-3">
+      <div>
+        <label class="auth-label" for="spot-name">名称</label>
+        <input id="spot-name" type="text" class="auth-input" maxlength="60" value="${esc(spot.name || '')}" />
+      </div>
+      <div>
+        <label class="auth-label" for="spot-category">カテゴリ</label>
+        <select id="spot-category" class="auth-input">${catOptions}</select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="auth-label" for="spot-lat">緯度</label>
+          <input id="spot-lat" type="number" step="0.000001" class="auth-input" value="${spot.lat ?? ''}" />
+        </div>
+        <div>
+          <label class="auth-label" for="spot-lng">経度</label>
+          <input id="spot-lng" type="number" step="0.000001" class="auth-input" value="${spot.lng ?? ''}" />
+        </div>
+      </div>
+      <p class="text-[11px] text-gray-400 -mt-1.5">📍現在地から緯度経度を入力: <button type="button" class="auth-btn-link" onclick="fillCurrentLocation()">現在地を使う</button></p>
+      <div>
+        <label class="auth-label" for="spot-desc">説明</label>
+        <textarea id="spot-desc" rows="3" class="auth-input" maxlength="300">${esc(spot.description || '')}</textarea>
+      </div>
+      <div>
+        <p class="auth-label">設備</p>
+        <div class="grid grid-cols-2 gap-1.5">${facChecks}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="auth-label" for="spot-hours">営業時間</label>
+          <input id="spot-hours" type="text" class="auth-input" maxlength="60" value="${esc(spot.openHours || '')}" />
+        </div>
+        <div>
+          <label class="auth-label" for="spot-fee">料金</label>
+          <input id="spot-fee" type="text" class="auth-input" maxlength="40" value="${esc(spot.fee || '')}" />
+        </div>
+      </div>
+      <p id="spot-form-error" class="auth-error"></p>
+    </div>`;
+}
+
+function fillCurrentLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(pos => {
+    document.getElementById('spot-lat').value = pos.coords.latitude.toFixed(6);
+    document.getElementById('spot-lng').value = pos.coords.longitude.toFixed(6);
+  });
+}
+
+function readSpotForm() {
+  const facilities = {};
+  document.querySelectorAll('.spot-fac-check').forEach(cb => { if (cb.checked) facilities[cb.dataset.fac] = true; });
+  return {
+    name: document.getElementById('spot-name').value.trim(),
+    category: document.getElementById('spot-category').value,
+    lat: parseFloat(document.getElementById('spot-lat').value),
+    lng: parseFloat(document.getElementById('spot-lng').value),
+    description: document.getElementById('spot-desc').value.trim(),
+    facilities,
+    openHours: document.getElementById('spot-hours').value.trim(),
+    fee: document.getElementById('spot-fee').value.trim(),
+  };
+}
+
+document.getElementById('post-spot-btn').addEventListener('click', () => {
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">スポットを投稿</h2>
+    ${spotFormFields()}
+    <button type="button" id="spot-submit-btn" class="auth-btn-primary mt-1" onclick="handleSubmitSpot()">投稿する</button>`);
+});
+
+async function handleSubmitSpot() {
+  const d = readSpotForm();
+  const errEl = document.getElementById('spot-form-error');
+  errEl.textContent = '';
+  if (!d.name || isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '名称・緯度・経度は必須です。'; return; }
+
+  const btn = document.getElementById('spot-submit-btn');
+  btn.disabled = true; btn.textContent = '投稿中…';
+  try {
+    const res = await callApi('submitSpot', { token: auth.token, spot: d });
+    if (!res.ok) { errEl.textContent = '投稿に失敗しました。'; btn.disabled = false; btn.textContent = '投稿する'; return; }
+    closeModal();
+    const spots = await loadMemberSpots();
+    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+    render();
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = '投稿する';
+  }
+}
+
+function openEditSpotModal(spotId) {
+  const spot = allSpots.find(s => s.id === spotId);
+  if (!spot) return;
+  openModal(`
+    <h2 class="font-maru font-bold text-lg mb-3">スポットを編集</h2>
+    ${spotFormFields(spot)}
+    <button type="button" id="spot-submit-btn" class="auth-btn-primary mt-1" onclick="handleUpdateSpot('${spotId}')">更新する</button>`);
+}
+
+async function handleUpdateSpot(spotId) {
+  const d = readSpotForm();
+  const errEl = document.getElementById('spot-form-error');
+  errEl.textContent = '';
+  if (!d.name || isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '名称・緯度・経度は必須です。'; return; }
+
+  const btn = document.getElementById('spot-submit-btn');
+  btn.disabled = true; btn.textContent = '更新中…';
+  try {
+    const res = await callApi('updateSpot', { token: auth.token, spotId, spot: d });
+    if (!res.ok) { errEl.textContent = '更新に失敗しました。'; btn.disabled = false; btn.textContent = '更新する'; return; }
+    closeModal();
+    const spots = await loadMemberSpots();
+    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+    render();
+  } catch (e) {
+    errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
+    btn.disabled = false; btn.textContent = '更新する';
+  }
+}
+
+async function handleDeleteSpot(spotId) {
+  if (!confirm('この投稿を削除しますか？関連するコメントも削除されます。')) return;
+  try {
+    const res = await callApi('deleteSpot', { token: auth.token, spotId });
+    if (!res.ok) { alert('削除に失敗しました。'); return; }
+    map.closePopup();
+    const spots = await loadMemberSpots();
+    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+    render();
+  } catch (e) {
+    alert('通信エラーが発生しました。時間をおいて再度お試しください。');
+  }
+}
+
+/* =====================================================================
+ * 会員機能：コメント
+ * ===================================================================== */
+async function loadCommentsIntoPopup(spotId) {
+  const box = document.getElementById('comments-' + spotId);
+  if (!box) return;
+  try {
+    const res = await fetch(CONFIG.gasUrl + '?action=listComments&spotId=' + encodeURIComponent(spotId), { cache: 'no-cache' });
+    const json = await res.json();
+    const box2 = document.getElementById('comments-' + spotId); // ポップアップ再描画対策
+    if (!box2) return;
+    if (!json.ok || json.comments.length === 0) {
+      box2.innerHTML = `<p class="text-gray-400">まだコメントはありません。</p>`;
+      return;
+    }
+    box2.innerHTML = json.comments.map(c => `
+      <div class="comment-item">
+        <div class="flex items-start justify-between gap-2">
+          <p class="font-bold text-pine">${esc(c.authorNickname || '会員')}</p>
+          ${auth.userId && c.authorId === auth.userId ? `
+          <span class="shrink-0 flex gap-2">
+            <button type="button" class="auth-btn-link !text-[10px]" onclick="handleEditComment('${spotId}','${c.id}')">編集</button>
+            <button type="button" class="auth-btn-link !text-[10px]" style="color:#C4604F" onclick="handleDeleteComment('${spotId}','${c.id}')">削除</button>
+          </span>` : ''}
+        </div>
+        <p id="comment-text-${c.id}" class="text-gray-600 whitespace-pre-wrap leading-relaxed">${esc(c.text)}</p>
+      </div>`).join('');
+  } catch (e) {
+    const box3 = document.getElementById('comments-' + spotId);
+    if (box3) box3.innerHTML = `<p class="text-gray-400">コメントを読み込めませんでした。</p>`;
+  }
+}
+
+map.on('popupopen', e => {
+  const spotId = e.popup._source && e.popup._source.spotId;
+  if (spotId) loadCommentsIntoPopup(spotId);
+});
+
+async function handleAddComment(spotId) {
+  const input = document.getElementById('comment-input-' + spotId);
+  const text = input.value.trim();
+  if (!text) return;
+  input.disabled = true;
+  try {
+    const res = await callApi('addComment', { token: auth.token, spotId, text });
+    if (res.ok) { input.value = ''; loadCommentsIntoPopup(spotId); }
+    else alert('コメントの投稿に失敗しました。');
+  } catch (e) {
+    alert('通信エラーが発生しました。');
+  }
+  input.disabled = false;
+}
+
+async function handleEditComment(spotId, commentId) {
+  const el = document.getElementById('comment-text-' + commentId);
+  const current = el.textContent;
+  const next = prompt('コメントを編集', current);
+  if (next === null || next.trim() === '') return;
+  try {
+    const res = await callApi('updateComment', { token: auth.token, commentId, text: next.trim() });
+    if (res.ok) loadCommentsIntoPopup(spotId);
+    else alert('編集に失敗しました。');
+  } catch (e) {
+    alert('通信エラーが発生しました。');
+  }
+}
+
+async function handleDeleteComment(spotId, commentId) {
+  if (!confirm('このコメントを削除しますか？')) return;
+  try {
+    const res = await callApi('deleteComment', { token: auth.token, commentId });
+    if (res.ok) loadCommentsIntoPopup(spotId);
+    else alert('削除に失敗しました。');
+  } catch (e) {
+    alert('通信エラーが発生しました。');
+  }
+}
+
+renderAuthArea();
+restoreSession();
 loadSpots();
 </script>
 </body>
