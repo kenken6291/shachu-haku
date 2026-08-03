@@ -113,6 +113,9 @@
   }
   .comment-item { border-top: 1px solid rgba(22,53,43,.08); padding: 8px 0; }
   .comment-item:first-child { border-top: none; }
+
+  /* Tailwindのflex等のdisplayユーティリティが hidden 属性より優先されてしまう問題の対策 */
+  [hidden] { display: none !important; }
 </style>
 </head>
 
