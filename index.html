@@ -554,6 +554,21 @@ function syncChipStyles() {
   });
 }
 
+/* カテゴリ・設備・検索・お気に入りフィルターをすべて初期状態に戻す */
+function resetFilters() {
+  Object.keys(CATEGORIES).forEach(k => activeCats.add(k));
+  activeFacs.clear();
+  searchQuery = '';
+  showFavoritesOnly = false;
+  const si1 = document.getElementById('search-input');
+  const si2 = document.getElementById('search-input-sp');
+  if (si1) si1.value = '';
+  if (si2) si2.value = '';
+  syncChipStyles();
+  syncFavFilterButton();
+  render();
+}
+
 /* =====================================================================
  * フィルタリング・描画
  * ===================================================================== */
@@ -755,7 +770,8 @@ function render() {
     const list = document.getElementById(id);
     list.innerHTML = '';
     if (spots.length === 0) {
-      list.innerHTML = `<div class="text-center text-sm text-gray-400 py-10">条件に合うスポットがありません。<br>${searchQuery.trim() ? '検索キーワードやフィルターを変更してみてください。' : 'フィルターを変更してみてください。'}</div>`;
+      list.innerHTML = `<div class="text-center text-sm text-gray-400 py-10">条件に合うスポットがありません。<br>${searchQuery.trim() ? '検索キーワードやフィルターを変更してみてください。' : 'フィルターを変更してみてください。'}<br>
+        <button type="button" class="auth-btn-link mt-2" onclick="resetFilters()">🔄 フィルターをリセット</button></div>`;
     } else {
       spots.forEach(s => list.appendChild(spotCard(s)));
     }
