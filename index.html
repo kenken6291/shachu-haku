@@ -977,9 +977,10 @@ function renderAuthArea() {
         <div id="account-menu" hidden
           class="absolute right-0 mt-1.5 w-40 bg-white rounded-xl shadow-xl border border-pine/10 py-1.5 z-[1300] text-pine">
           <button type="button" onclick="openMyPageModal()" class="w-full text-left px-3 py-2 text-xs font-bold hover:bg-mist">マイページ</button>
-          <button type="button" onclick="handleLogout()" class="w-full text-left px-3 py-2 text-xs font-bold hover:bg-mist text-[#C4604F]">ログアウト</button>
         </div>
-      </div>`;
+      </div>
+      <button type="button" onclick="handleLogout()"
+        class="text-xs bg-mist/10 hover:bg-mist/20 rounded-full px-3 py-1 font-bold transition-colors text-mist/90">ログアウト</button>`;
     document.getElementById('account-menu-btn').addEventListener('click', () => {
       const menu = document.getElementById('account-menu');
       menu.hidden = !menu.hidden;
