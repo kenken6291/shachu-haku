@@ -223,6 +223,13 @@
   </div>
 </div>
 
+<!-- 地図クリックでの位置選択中に表示するバナー -->
+<div id="map-pick-banner" hidden
+     class="fixed top-3 left-1/2 -translate-x-1/2 z-[1450] bg-pine text-white rounded-full shadow-lg pl-4 pr-1.5 py-1.5 flex items-center gap-2 text-xs sm:text-sm font-bold font-maru">
+  📍 地図をタップして位置を選択してください
+  <button type="button" onclick="cancelMapPickLocation()" class="bg-white/20 hover:bg-white/30 rounded-full px-3 py-1 text-xs">キャンセル</button>
+</div>
+
 <script>
 /* =====================================================================
  * 設定
@@ -1034,6 +1041,8 @@ function openModal(html) {
 function closeModal() {
   document.getElementById('modal-overlay').hidden = true;
   document.getElementById('modal-box').innerHTML = '';
+  cancelMapPickLocation(); // 位置選択中だった場合は後片付け
+  if (mapPickMarker) { map.removeLayer(mapPickMarker); mapPickMarker = null; } // 選択用の仮マーカーを除去
 }
 document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target.id === 'modal-overlay') closeModal();
@@ -1307,7 +1316,7 @@ function spotFormFields(spot = {}) {
           <input id="spot-lng" type="number" step="0.000001" class="auth-input" value="${spot.lng ?? ''}" />
         </div>
       </div>
-      <p class="text-[11px] text-gray-400 -mt-1.5">📍現在地から緯度経度を入力: <button type="button" class="auth-btn-link" onclick="fillCurrentLocation()">現在地を使う</button></p>
+      <p class="text-[11px] text-gray-400 -mt-1.5">📍現在地から緯度経度を入力: <button type="button" class="auth-btn-link" onclick="fillCurrentLocation()">現在地を使う</button>　／　<button type="button" class="auth-btn-link" onclick="startMapPickLocation()">🗺️ 地図をタップして選択</button></p>
       <div>
         <div class="flex items-center justify-between">
           <label class="auth-label !mb-0" for="spot-desc">説明</label>
@@ -1366,6 +1375,46 @@ function fillCurrentLocation() {
     document.getElementById('spot-lat').value = pos.coords.latitude.toFixed(6);
     document.getElementById('spot-lng').value = pos.coords.longitude.toFixed(6);
   });
+}
+
+/* =====================================================================
+ * 地図をタップして緯度・経度を選択（投稿/編集フォーム用）
+ * ===================================================================== */
+let mapPickHandler = null;
+let mapPickMarker = null;
+
+function startMapPickLocation() {
+  document.getElementById('modal-overlay').hidden = true;   // フォームを一時的に隠して地図を全面表示
+  document.getElementById('map-pick-banner').hidden = false;
+  document.getElementById('map').style.cursor = 'crosshair';
+
+  mapPickHandler = (e) => {
+    const { lat, lng } = e.latlng;
+    const latEl = document.getElementById('spot-lat');
+    const lngEl = document.getElementById('spot-lng');
+    if (latEl) latEl.value = lat.toFixed(6);
+    if (lngEl) lngEl.value = lng.toFixed(6);
+
+    if (mapPickMarker) map.removeLayer(mapPickMarker);
+    mapPickMarker = L.marker([lat, lng], {
+      icon: L.divIcon({ className: '', html: '<div class="pin" style="background:#E8A33D"><span>📍</span></div>', iconSize: [34, 34], iconAnchor: [17, 34] }),
+    }).addTo(map);
+
+    endMapPickLocation();
+  };
+  map.on('click', mapPickHandler);
+}
+
+function endMapPickLocation() {
+  if (mapPickHandler) { map.off('click', mapPickHandler); mapPickHandler = null; }
+  document.getElementById('map-pick-banner').hidden = true;
+  document.getElementById('map').style.cursor = '';
+  document.getElementById('modal-overlay').hidden = false; // フォームを再表示
+}
+
+function cancelMapPickLocation() {
+  if (!mapPickHandler) return; // 選択中でなければ何もしない
+  endMapPickLocation();
 }
 
 function readSpotForm() {
