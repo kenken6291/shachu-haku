@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-06-12",
+  "updated": "2026-09-09",
   "_schema": {
     "id": "一意のID（英数字とハイフン）。修正PRの目印になるため変更しない",
     "name": "スポット名（必須）",
@@ -9,9 +9,11 @@
     "lng": "経度（必須・数値）",
     "description": "一言紹介（任意）",
     "facilities": "設備フラグ。true のものだけ書けばOK： toilet / power / bath / shop / wifi / dump",
+    "sleepStatus": "車中泊の可否。ok（可） / ng（不可） / unclear（要確認）のいずれか。未指定は unclear 扱い",
     "openHours": "営業時間・チェックイン時間など（任意・文字列）",
     "fee": "料金（任意・文字列）",
     "notes": "注意事項（任意）",
+    "photos": "写真URLの配列（任意）。静的データではGitHub管理下の画像URL等を直接指定（会員投稿はGoogleドライブに自動保存されるため別形式）",
     "kenken6291": "投稿者のGitHubユーザー名など（任意）"
   },
   "spots": [
@@ -25,6 +27,7 @@
       "facilities": { "toilet": true, "shop": true, "wifi": true },
       "openHours": "駐車場24時間（売店 9:00-19:00）",
       "fee": "無料",
+      "sleepStatus": "unclear",
       "notes": "週末は混雑。アイドリングは控えめに。",
       "addedBy": "kenken6291"
     },
@@ -38,6 +41,7 @@
       "facilities": { "toilet": true, "power": true, "dump": true, "wifi": true },
       "openHours": "チェックイン 13:00-18:00 / チェックアウト 11:00",
       "fee": "2,500円/泊",
+      "sleepStatus": "ok",
       "notes": "要事前予約（公式サイトから）。",
       "addedBy": "kenken6291"
     },
@@ -51,6 +55,7 @@
       "facilities": { "toilet": true, "shop": true, "bath": true },
       "openHours": "通年営業（受付 8:00-17:00）",
       "fee": "1,000円/人",
+      "sleepStatus": "ok",
       "notes": "直火不可・焚き火台のみ可。",
       "addedBy": "kenken6291"
     },
@@ -64,6 +69,7 @@
       "facilities": { "toilet": true },
       "openHours": "通行可能期間: 4月下旬〜11月（冬季閉鎖）",
       "fee": "無料",
+      "sleepStatus": "ng",
       "notes": "夜間は冷え込むため防寒必須。宿泊不可・休憩のみ。",
       "addedBy": "kenken6291"
     },
@@ -77,6 +83,7 @@
       "facilities": { "toilet": true, "bath": true, "shop": true, "wifi": true },
       "openHours": "10:00-22:00（最終受付 21:00）",
       "fee": "入浴 800円",
+      "sleepStatus": "ng",
       "notes": "駐車場での仮眠は不可。入浴のみ。",
       "addedBy": "kenken6291"
     },
@@ -90,6 +97,7 @@
       "facilities": { "toilet": false },
       "openHours": "24時間",
       "fee": "上限 1,200円/日",
+      "sleepStatus": "unclear",
       "notes": "車中泊の可否は現地掲示を確認してください。",
       "addedBy": "kenken6291"
     }
