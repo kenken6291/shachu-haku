@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "updated": "2026-09-09",
+  "updated": "2026-09-19",
   "_schema": {
     "id": "一意のID（英数字とハイフン）。修正PRの目印になるため変更しない",
     "name": "スポット名（必須）",
-    "category": "michinoeki | rvpark | camp | view | onsen | parking のいずれか（必須）",
+    "category": "michinoeki | rvpark | camp | view | onsen | parking | izakaya のいずれか（必須）",
     "lat": "緯度（必須・数値）",
     "lng": "経度（必須・数値）",
     "description": "一言紹介（任意）",
@@ -85,6 +85,20 @@
       "fee": "入浴 800円",
       "sleepStatus": "ng",
       "notes": "駐車場での仮眠は不可。入浴のみ。",
+      "addedBy": "kenken6291"
+    },
+    {
+      "id": "izakaya-tabisaki-shokudo",
+      "name": "旅先食堂",
+      "category": "izakaya",
+      "lat": 35.6640,
+      "lng": 138.5680,
+      "description": "車中泊の車がそのまま停められる駐車場付きの居酒屋。地元食材の一品料理が充実。",
+      "facilities": { "toilet": true, "shop": false },
+      "openHours": "17:00-23:00（月曜定休）",
+      "fee": "予算目安 3,000円〜",
+      "sleepStatus": "ok",
+      "notes": "駐車場での車中泊は飲食利用者に限り可。事前に店舗へ一声かけると安心です。",
       "addedBy": "kenken6291"
     },
     {
