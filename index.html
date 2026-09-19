@@ -297,7 +297,7 @@ function normalizeCategoryValue(raw) {
   return v; // 未知のカテゴリはそのまま（該当チップが無く「駐車場アイコン」等でフォールバック表示）
 }
 function normalizeSpotList(list) {
-  return list.map(s => ({ ...s, category: normalizeCategoryValue(s.category) }));
+  return list.map(s => ({ ...s, category: normalizeCategoryValue(s.category), tel: s.tel == null ? '' : String(s.tel) }));
 }
 
 /* ⑥ Googleドライブに保存した写真の表示URL（サムネイル/拡大表示） */
@@ -681,7 +681,7 @@ function popupHtml(spot) {
       <dl class="text-xs text-gray-600 space-y-0.5">
         ${spot.openHours ? `<div><dt class="inline font-bold">営業: </dt><dd class="inline">${esc(spot.openHours)}</dd></div>` : ''}
         ${spot.fee ? `<div><dt class="inline font-bold">料金: </dt><dd class="inline">${esc(spot.fee)}</dd></div>` : ''}
-        ${spot.tel ? `<div><dt class="inline font-bold">電話: </dt><dd class="inline"><a href="tel:${esc(spot.tel.replace(/[^0-9+]/g, ''))}" class="underline" style="color:#16352B">${esc(spot.tel)}</a></dd></div>` : ''}
+        ${spot.tel ? `<div><dt class="inline font-bold">電話: </dt><dd class="inline"><a href="tel:${esc(String(spot.tel).replace(/[^0-9+]/g, ''))}" class="underline" style="color:#16352B">${esc(spot.tel)}</a></dd></div>` : ''}
         ${spot.notes ? `<div><dt class="inline font-bold">備考: </dt><dd class="inline">${esc(spot.notes)}</dd></div>` : ''}
       </dl>
       <div class="flex gap-2 pt-1">
@@ -784,12 +784,17 @@ function render() {
   const spots = filteredSpots();
 
   spots.forEach(spot => {
-    const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
-      .addTo(map)
-      .bindPopup(popupHtml(spot), { closeButton: true, autoPanPadding: [30, 60] });
-    m.spotId = spot.id;
-    m.on('click', () => highlightCard(spot.id));
-    markers[spot.id] = m;
+    // 1件の描画失敗（不正データ等）で他のスポットまで巻き込まれないよう分離
+    try {
+      const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
+        .addTo(map)
+        .bindPopup(popupHtml(spot), { closeButton: true, autoPanPadding: [30, 60] });
+      m.spotId = spot.id;
+      m.on('click', () => highlightCard(spot.id));
+      markers[spot.id] = m;
+    } catch (e) {
+      console.error('スポットの描画に失敗しました:', spot.id, spot.name, e);
+    }
   });
 
   // リスト再構築（PC・スマホ）
@@ -800,7 +805,10 @@ function render() {
       list.innerHTML = `<div class="text-center text-sm text-gray-400 py-10">条件に合うスポットがありません。<br>${searchQuery.trim() ? '検索キーワードやフィルターを変更してみてください。' : 'フィルターを変更してみてください。'}<br>
         <button type="button" class="auth-btn-link mt-2" onclick="resetFilters()">🔄 フィルターをリセット</button></div>`;
     } else {
-      spots.forEach(s => list.appendChild(spotCard(s)));
+      spots.forEach(s => {
+        try { list.appendChild(spotCard(s)); }
+        catch (e) { console.error('カードの描画に失敗しました:', s.id, s.name, e); }
+      });
     }
   }
 
