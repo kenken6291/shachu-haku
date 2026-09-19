@@ -63,6 +63,7 @@ gasUrl: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
 | `migrateAddPhotosColumn` | `Spots` シートに `photos` 列（写真のドライブファイルID） |
 | `migrateAddRatingColumn` | `Comments` シートに `rating` 列（評価） |
 | `migrateAddFavoritesSheet` | `Favorites` シート自体（お気に入り機能） |
+| `migrateAddTelColumn` | `Spots` シートに `tel` 列（電話番号） |
 
 実行後は、[デプロイ] を「編集」して**新しいバージョン**を作成しないと公開URLに反映されません。
 

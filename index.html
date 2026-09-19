@@ -663,6 +663,7 @@ function popupHtml(spot) {
       <dl class="text-xs text-gray-600 space-y-0.5">
         ${spot.openHours ? `<div><dt class="inline font-bold">営業: </dt><dd class="inline">${esc(spot.openHours)}</dd></div>` : ''}
         ${spot.fee ? `<div><dt class="inline font-bold">料金: </dt><dd class="inline">${esc(spot.fee)}</dd></div>` : ''}
+        ${spot.tel ? `<div><dt class="inline font-bold">電話: </dt><dd class="inline"><a href="tel:${esc(spot.tel.replace(/[^0-9+]/g, ''))}" class="underline" style="color:#16352B">${esc(spot.tel)}</a></dd></div>` : ''}
         ${spot.notes ? `<div><dt class="inline font-bold">備考: </dt><dd class="inline">${esc(spot.notes)}</dd></div>` : ''}
       </dl>
       <div class="flex gap-2 pt-1">
@@ -1349,6 +1350,10 @@ function spotFormFields(spot = {}) {
           <input id="spot-fee" type="text" class="auth-input" maxlength="40" value="${esc(spot.fee || '')}" />
         </div>
       </div>
+      <div>
+        <label class="auth-label" for="spot-tel">電話番号</label>
+        <input id="spot-tel" type="tel" class="auth-input" maxlength="20" placeholder="0X0-XXXX-XXXX" value="${esc(spot.tel || '')}" />
+      </div>
       ${photoFieldsHtml(spot)}
       <p id="spot-form-error" class="auth-error"></p>
     </div>`;
@@ -1431,6 +1436,7 @@ function readSpotForm() {
     facilities,
     openHours: document.getElementById('spot-hours').value.trim(),
     fee: document.getElementById('spot-fee').value.trim(),
+    tel: document.getElementById('spot-tel').value.trim(),
   };
 }
 
