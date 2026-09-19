@@ -282,6 +282,24 @@ function sleepStatusOf(spot) {
   return SLEEP_STATUS[spot.sleepStatus] ? spot.sleepStatus : 'unclear';
 }
 
+/* カテゴリ絞り込みの取りこぼし対策：
+ * スプレッドシートへの手動貼り付け・一括インポート等で category セルに
+ * 前後の空白やラベル文字列（キー名ではなく「車中泊で行ける居酒屋」等）が
+ * 入ってしまうと、フィルターチップ側のキー('izakaya'等)と一致せず
+ * 絞り込みで表示されなくなる。読み込み時に正規化しておく。 */
+const CATEGORY_LABEL_TO_KEY = Object.fromEntries(
+  Object.entries(CATEGORIES).map(([k, c]) => [c.label, k])
+);
+function normalizeCategoryValue(raw) {
+  const v = (raw == null ? '' : String(raw)).trim();
+  if (CATEGORIES[v]) return v;
+  if (CATEGORY_LABEL_TO_KEY[v]) return CATEGORY_LABEL_TO_KEY[v];
+  return v; // 未知のカテゴリはそのまま（該当チップが無く「駐車場アイコン」等でフォールバック表示）
+}
+function normalizeSpotList(list) {
+  return list.map(s => ({ ...s, category: normalizeCategoryValue(s.category) }));
+}
+
 /* ⑥ Googleドライブに保存した写真の表示URL（サムネイル/拡大表示） */
 function drivePhotoUrl(fileId, size = 400) {
   return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${size}`;
@@ -343,10 +361,10 @@ async function loadSpots() {
     const res = await fetch(CONFIG.dataUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    allSpots = (data.spots || []).map(s => ({ ...s, source: 'static' }));
+    allSpots = normalizeSpotList(data.spots || []).map(s => ({ ...s, source: 'static' }));
   } catch (e) {
     console.warn('spots.json の読込に失敗したため、サンプルデータを表示します:', e.message);
-    allSpots = SAMPLE_DATA.spots.map(s => ({ ...s, source: 'static' }));
+    allSpots = normalizeSpotList(SAMPLE_DATA.spots).map(s => ({ ...s, source: 'static' }));
   }
 
   try {
@@ -958,7 +976,7 @@ async function loadMemberSpots() {
   const res = await fetch(CONFIG.gasUrl + '?action=listSpots', { cache: 'no-cache' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
-  return json.ok ? json.spots : [];
+  return json.ok ? normalizeSpotList(json.spots) : [];
 }
 
 /* =====================================================================
