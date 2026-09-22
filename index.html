@@ -10,6 +10,11 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
+<!-- Leaflet.markercluster（大量スポットでも地図描画を軽快にするクラスタリング） -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+
 <!-- Tailwind CSS (CDN) -->
 <script src="https://cdn.tailwindcss.com"></script>
 
@@ -348,6 +353,16 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+/* 大量スポットでも軽快に動くよう、個別マーカーではなくクラスタリング表示にする */
+const markerClusterGroup = L.markerClusterGroup({
+  maxClusterRadius: 60,
+  spiderfyOnMaxZoom: true,
+  showCoverageOnHover: false,
+  chunkedLoading: true, // 追加処理を分割してUIブロックを防ぐ
+});
+map.addLayer(markerClusterGroup);
+const LIST_RENDER_LIMIT = 300; // サイドバー/シートの一覧はこの件数まで表示（地図上のマーカーは全件表示）
 
 /* =====================================================================
  * データ読込（fetch失敗時はサンプルデータにフォールバック）
@@ -952,26 +967,29 @@ function spotCard(spot) {
 }
 
 function render() {
-  // マーカー再構築
-  Object.values(markers).forEach(m => map.removeLayer(m));
+  // マーカー再構築（クラスタリング利用・ポップアップ内容は開いたときに生成して高速化）
+  markerClusterGroup.clearLayers();
   markers = {};
   const spots = filteredSpots();
+  const newMarkers = [];
 
   spots.forEach(spot => {
     // 1件の描画失敗（不正データ等）で他のスポットまで巻き込まれないよう分離
     try {
       const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
-        .addTo(map)
-        .bindPopup(popupHtml(spot), { closeButton: true, autoPanPadding: [30, 60] });
+        .bindPopup('', { closeButton: true, autoPanPadding: [30, 60] }); // 内容はpopupopen時に設定（初期描画を軽くする）
       m.spotId = spot.id;
       m.on('click', () => highlightCard(spot.id));
       markers[spot.id] = m;
+      newMarkers.push(m);
     } catch (e) {
       console.error('スポットの描画に失敗しました:', spot.id, spot.name, e);
     }
   });
+  markerClusterGroup.addLayers(newMarkers);
 
-  // リスト再構築（PC・スマホ）
+  // リスト再構築（PC・スマホ）：件数が多い場合は表示上限を設けて動作を軽く保つ
+  const listSpots = spots.slice(0, LIST_RENDER_LIMIT);
   for (const id of ['spot-list-pc', 'spot-list-sp']) {
     const list = document.getElementById(id);
     list.innerHTML = '';
@@ -979,10 +997,18 @@ function render() {
       list.innerHTML = `<div class="text-center text-sm text-gray-400 py-10">条件に合うスポットがありません。<br>${searchQuery.trim() ? '検索キーワードやフィルターを変更してみてください。' : 'フィルターを変更してみてください。'}<br>
         <button type="button" class="auth-btn-link mt-2" onclick="resetFilters()">🔄 フィルターをリセット</button></div>`;
     } else {
-      spots.forEach(s => {
-        try { list.appendChild(spotCard(s)); }
+      const frag = document.createDocumentFragment();
+      listSpots.forEach(s => {
+        try { frag.appendChild(spotCard(s)); }
         catch (e) { console.error('カードの描画に失敗しました:', s.id, s.name, e); }
       });
+      list.appendChild(frag);
+      if (spots.length > LIST_RENDER_LIMIT) {
+        const note = document.createElement('p');
+        note.className = 'text-center text-[11px] text-gray-400 py-3 px-2';
+        note.textContent = `上位${LIST_RENDER_LIMIT}件のみ一覧表示しています（該当${spots.length}件・地図には全件表示）。検索やフィルターで絞り込むと見やすくなります。`;
+        list.appendChild(note);
+      }
     }
   }
 
@@ -994,9 +1020,10 @@ function render() {
 function focusSpot(id, fromList = false) {
   const m = markers[id];
   if (!m) return;
-  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), { duration: 0.6 });
-  m.openPopup();
-  highlightCard(id);
+  markerClusterGroup.zoomToShowLayer(m, () => {
+    m.openPopup();
+    highlightCard(id);
+  });
   if (fromList && window.innerWidth < 768) setSheet('peek'); // スマホはシートを下げてマップを見せる
 }
 
@@ -1025,10 +1052,12 @@ async function handleShareSpot(id) {
   }
 }
 
-// ポップアップの開閉に合わせてURLを同期（ブラウザ履歴は汚さずreplaceStateのみ使用）＋コメント読込
+// ポップアップの開閉に合わせてURLを同期（ブラウザ履歴は汚さずreplaceStateのみ使用）＋内容生成・コメント読込
 map.on('popupopen', e => {
   const spotId = e.popup._source && e.popup._source.spotId;
   if (spotId) {
+    const spot = allSpots.find(s => s.id === spotId);
+    if (spot) e.popup.setContent(popupHtml(spot)); // 内容はここで初めて生成（一覧描画を軽くするため）
     history.replaceState(null, '', spotShareUrl(spotId));
     loadCommentsIntoPopup(spotId);
   }
