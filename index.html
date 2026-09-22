@@ -453,13 +453,21 @@ function todayStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// サーバー側で日付型に自動変換されISO形式("2026-09-21T15:00:00.000Z"等)で
+// 返ってきた場合でも、先頭の yyyy-MM-dd 部分だけを取り出して表示する保険
+function formatVisitDate(v) {
+  const s = String(v || '');
+  const m = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : s;
+}
+
 function visitListHtml(spotId) {
   const list = visitsForSpot(spotId);
   if (!list.length) return `<p class="text-[11px] text-gray-400">まだ記録がありません。</p>`;
   return list.map(v => `
     <div class="flex items-start justify-between gap-2 text-[11px] py-1 border-b border-pine/5 last:border-0">
       <div class="min-w-0">
-        <p class="font-bold text-pine">${esc(v.visitedDate || '')}</p>
+        <p class="font-bold text-pine">${esc(formatVisitDate(v.visitedDate))}</p>
         ${v.note ? `<p class="text-gray-600 whitespace-pre-wrap">${esc(v.note)}</p>` : ''}
       </div>
       <span class="shrink-0 flex gap-2">
@@ -490,7 +498,7 @@ async function handleAddVisit(spotId) {
 async function handleEditVisit(spotId, visitId) {
   const v = visits.find(x => x.id === visitId);
   if (!v) return;
-  const dateInput = prompt('訪問日を編集', v.visitedDate || todayStr());
+  const dateInput = prompt('訪問日を編集', formatVisitDate(v.visitedDate) || todayStr());
   if (dateInput === null) return;
   const visitedDate = dateInput.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(visitedDate)) { alert('日付は YYYY-MM-DD の形式で入力してください。'); return; }
@@ -535,7 +543,7 @@ function openVisitHistoryModal() {
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <p class="font-bold text-pine truncate">${c.icon ? c.icon + ' ' : ''}${esc(spot ? spot.name : '(削除済みスポット)')}</p>
-              <p class="text-gray-500">${esc(v.visitedDate || '')}</p>
+              <p class="text-gray-500">${esc(formatVisitDate(v.visitedDate))}</p>
               ${v.note ? `<p class="text-gray-600 whitespace-pre-wrap mt-0.5">${esc(v.note)}</p>` : ''}
             </div>
             <span class="shrink-0 flex gap-2">
