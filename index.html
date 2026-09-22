@@ -158,6 +158,10 @@
           class="w-full flex items-center justify-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-xs font-bold font-maru transition-all bg-white" style="border-color:rgba(22,53,43,.15)">
           ⭐ お気に入りのみ表示
         </button>
+        <button id="visit-filter-btn-pc" type="button" hidden onclick="toggleVisitedFilter()"
+          class="w-full flex items-center justify-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-xs font-bold font-maru transition-all bg-white" style="border-color:rgba(22,53,43,.15)">
+          🚗 行った記録のみ表示
+        </button>
       </div>
       <div id="spot-list-pc" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
     </aside>
@@ -210,6 +214,10 @@
     <button id="fav-filter-btn-sp" type="button" hidden onclick="toggleFavoritesFilter()"
       class="shrink-0 rounded-full border-2 px-2.5 py-1 text-[11px] font-bold transition-all bg-white" style="border-color:rgba(22,53,43,.15)">
       ⭐
+    </button>
+    <button id="visit-filter-btn-sp" type="button" hidden onclick="toggleVisitedFilter()"
+      class="shrink-0 rounded-full border-2 px-2.5 py-1 text-[11px] font-bold transition-all bg-white" style="border-color:rgba(22,53,43,.15)">
+      🚗
     </button>
   </div>
   <div id="spot-list-sp" class="overflow-y-auto px-3 pb-24 space-y-2" style="height: calc(85vh - 96px);"></div>
@@ -315,6 +323,7 @@ const activeCats = new Set(Object.keys(CATEGORIES)); // 初期は全カテゴリ
 const activeFacs = new Set();                        // AND条件（空なら無視）
 let searchQuery = '';                                // ①名称・説明のテキスト検索
 let showFavoritesOnly = false;                        // ⑦お気に入りのみ表示
+let showVisitedOnly = false;                           // ⑪行った記録のみ表示
 let favoriteSpotIds = new Set();                      // ⑦ログイン中会員のお気に入りスポットID
 let visits = [];                                       // ⑪ログイン中会員の「行った記録」一覧 {id,spotId,visitedDate,note,createdAt,updatedAt}
 let spotStats = {};                                    // ⑩ spotId -> { avg, count }（コメントの平均評価）
@@ -380,6 +389,7 @@ async function loadSpots() {
   loadRouteFromStorage();      // ⑧周遊ルート（端末に保存済みのもの）
   updateRouteButton();
   syncFavFilterButton();
+  syncVisitFilterButton();
 
   buildFilters();
   render();
@@ -718,12 +728,14 @@ function resetFilters() {
   activeFacs.clear();
   searchQuery = '';
   showFavoritesOnly = false;
+  showVisitedOnly = false;
   const si1 = document.getElementById('search-input');
   const si2 = document.getElementById('search-input-sp');
   if (si1) si1.value = '';
   if (si2) si2.value = '';
   syncChipStyles();
   syncFavFilterButton();
+  syncVisitFilterButton();
   render();
 }
 
@@ -738,6 +750,7 @@ function filteredSpots() {
       if (!s.facilities || !s.facilities[f]) return false; // AND条件
     }
     if (showFavoritesOnly && !favoriteSpotIds.has(s.id)) return false;
+    if (showVisitedOnly && !visitsForSpot(s.id).length) return false;
     if (q) {
       const hay = `${s.name || ''} ${s.description || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -761,6 +774,24 @@ function syncFavFilterButton() {
     btn.style.background = showFavoritesOnly ? '#FDF6EA' : '#fff';
     btn.style.color = showFavoritesOnly ? '#B97F25' : '';
     btn.setAttribute('aria-pressed', showFavoritesOnly);
+  });
+}
+
+/* ⑪行った記録のみ表示トグル */
+function toggleVisitedFilter() {
+  if (!auth.token) { openLoginModal(); return; }
+  showVisitedOnly = !showVisitedOnly;
+  syncVisitFilterButton();
+  render();
+}
+function syncVisitFilterButton() {
+  [document.getElementById('visit-filter-btn-pc'), document.getElementById('visit-filter-btn-sp')].forEach(btn => {
+    if (!btn) return;
+    btn.hidden = !auth.token;
+    btn.style.borderColor = showVisitedOnly ? '#4C8C5C' : 'rgba(22,53,43,.15)';
+    btn.style.background = showVisitedOnly ? '#E7F4EA' : '#fff';
+    btn.style.color = showVisitedOnly ? '#2F7A44' : '';
+    btn.setAttribute('aria-pressed', showVisitedOnly);
   });
 }
 
@@ -1160,6 +1191,7 @@ function renderAuthArea() {
   const el = document.getElementById('auth-area');
   const postBtn = document.getElementById('post-spot-btn');
   syncFavFilterButton();
+  syncVisitFilterButton();
   if (auth.token) {
     postBtn.hidden = false;
     el.innerHTML = `
@@ -1199,8 +1231,10 @@ function handleLogout() {
   favoriteSpotIds = new Set();
   visits = [];
   showFavoritesOnly = false;
+  showVisitedOnly = false;
   renderAuthArea();
   syncFavFilterButton();
+  syncVisitFilterButton();
   render();
 }
 
@@ -1337,7 +1371,7 @@ async function handleLogin() {
     }
     loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(() => {});
     loadFavorites().then(() => { syncFavFilterButton(); render(); }).catch(() => {});
-    loadVisits().catch(() => {});
+    loadVisits().then(() => { syncVisitFilterButton(); render(); }).catch(() => {});
   } catch (e) {
     errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
     btn.disabled = false; btn.textContent = 'ログイン';
