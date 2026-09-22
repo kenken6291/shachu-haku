@@ -249,6 +249,14 @@
   <button type="button" onclick="cancelMapPickLocation()" class="bg-white/20 hover:bg-white/30 rounded-full px-3 py-1 text-xs">キャンセル</button>
 </div>
 
+<!-- データ読込に失敗した場合の警告バナー -->
+<div id="data-load-warning" hidden
+     class="fixed top-3 left-1/2 -translate-x-1/2 z-[1450] bg-[#C4604F] text-white rounded-full shadow-lg pl-4 pr-1.5 py-1.5 flex items-center gap-2 text-xs sm:text-sm font-bold font-maru max-w-[92vw]">
+  ⚠️ <span>一部のデータを読み込めませんでした</span>
+  <button type="button" onclick="location.reload()" class="bg-white/20 hover:bg-white/30 rounded-full px-3 py-1 text-xs shrink-0">再読込</button>
+  <button type="button" onclick="document.getElementById('data-load-warning').hidden = true" class="bg-white/20 hover:bg-white/30 rounded-full px-2 py-1 text-xs shrink-0" aria-label="閉じる">✕</button>
+</div>
+
 <script>
 /* =====================================================================
  * 設定
@@ -396,13 +404,22 @@ async function loadSpots() {
   } catch (e) {
     console.warn('spots.json の読込に失敗したため、サンプルデータを表示します:', e.message);
     allSpots = normalizeSpotList(SAMPLE_DATA.spots).map(s => ({ ...s, source: 'static' }));
+    showDataLoadWarning();
   }
 
   try {
-    const memberSpots = await loadMemberSpots();
+    let memberSpots;
+    try {
+      memberSpots = await loadMemberSpots();
+    } catch (e1) {
+      console.warn('会員投稿スポットの読込に失敗、再試行します:', e1.message);
+      await new Promise(r => setTimeout(r, 1500));
+      memberSpots = await loadMemberSpots(); // 通信の一時的な失敗に備えて1回だけ再試行
+    }
     allSpots = allSpots.concat(memberSpots);
   } catch (e) {
-    console.warn('会員投稿スポットの読込に失敗しました:', e.message);
+    console.warn('会員投稿スポットの読込に失敗しました（再試行後も失敗）:', e.message);
+    showDataLoadWarning();
   }
 
   await loadSpotStats();      // ⑩平均評価
@@ -414,6 +431,11 @@ async function loadSpots() {
 
   buildFilters();
   render();
+}
+
+function showDataLoadWarning() {
+  const el = document.getElementById('data-load-warning');
+  if (el) el.hidden = false;
 }
 
 /* ⑩ スポットごとの平均評価を取得 */
@@ -1215,7 +1237,8 @@ async function loadMemberSpots() {
   const res = await fetch(CONFIG.gasUrl + '?action=listSpots', { cache: 'no-cache' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
-  return json.ok ? normalizeSpotList(json.spots) : [];
+  if (!json.ok) throw new Error(json.error + (json.message ? ': ' + json.message : ''));
+  return normalizeSpotList(json.spots);
 }
 
 /* =====================================================================
@@ -1428,7 +1451,7 @@ async function handleLogin() {
     // 地図の再描画（スポット件数が多いと重い）は、モーダルを閉じる操作が先に画面に反映されてから行う
     setTimeout(() => {
       render();
-      loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(() => {});
+      loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(e => { console.warn('ログイン後の一覧再取得に失敗しました:', e.message); showDataLoadWarning(); });
       loadFavorites().then(() => { syncFavFilterButton(); render(); }).catch(() => {});
       loadVisits().then(() => { syncVisitFilterButton(); render(); }).catch(() => {});
     }, 0);
@@ -1731,9 +1754,14 @@ async function handleSubmitSpot() {
       await uploadPendingPhotos(res.id);
     }
     closeModal();
-    const spots = await loadMemberSpots();
-    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
-    render();
+    try {
+      const spots = await loadMemberSpots();
+      allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+      render();
+    } catch (e2) {
+      console.warn('投稿後の一覧再取得に失敗しました:', e2.message);
+      showDataLoadWarning();
+    }
   } catch (e) {
     errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
     btn.disabled = false; btn.textContent = '投稿する';
@@ -1767,9 +1795,14 @@ async function handleUpdateSpot(spotId) {
       await uploadPendingPhotos(spotId);
     }
     closeModal();
-    const spots = await loadMemberSpots();
-    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
-    render();
+    try {
+      const spots = await loadMemberSpots();
+      allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+      render();
+    } catch (e2) {
+      console.warn('更新後の一覧再取得に失敗しました:', e2.message);
+      showDataLoadWarning();
+    }
   } catch (e) {
     errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
     btn.disabled = false; btn.textContent = '更新する';
@@ -1782,9 +1815,14 @@ async function handleDeleteSpot(spotId) {
     const res = await callApi('deleteSpot', { token: auth.token, spotId });
     if (!res.ok) { alert('削除に失敗しました。'); return; }
     map.closePopup();
-    const spots = await loadMemberSpots();
-    allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
-    render();
+    try {
+      const spots = await loadMemberSpots();
+      allSpots = allSpots.filter(s => s.source !== 'member').concat(spots);
+      render();
+    } catch (e2) {
+      console.warn('削除後の一覧再取得に失敗しました:', e2.message);
+      showDataLoadWarning();
+    }
   } catch (e) {
     alert('通信エラーが発生しました。時間をおいて再度お試しください。');
   }
