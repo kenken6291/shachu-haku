@@ -1415,15 +1415,18 @@ async function handleLogin() {
     auth.token = res.token; auth.userId = res.userId; auth.nickname = res.nickname; auth.mustChangePassword = res.mustChangePassword;
     saveSession();
     renderAuthArea();
-    render();
     if (auth.mustChangePassword) {
       openChangePasswordModal(true);
     } else {
       closeModal();
     }
-    loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(() => {});
-    loadFavorites().then(() => { syncFavFilterButton(); render(); }).catch(() => {});
-    loadVisits().then(() => { syncVisitFilterButton(); render(); }).catch(() => {});
+    // 地図の再描画（スポット件数が多いと重い）は、モーダルを閉じる操作が先に画面に反映されてから行う
+    setTimeout(() => {
+      render();
+      loadMemberSpots().then(spots => { allSpots = allSpots.filter(s => s.source !== 'member').concat(spots); render(); }).catch(() => {});
+      loadFavorites().then(() => { syncFavFilterButton(); render(); }).catch(() => {});
+      loadVisits().then(() => { syncVisitFilterButton(); render(); }).catch(() => {});
+    }, 0);
   } catch (e) {
     errEl.textContent = '通信エラーが発生しました。時間をおいて再度お試しください。';
     btn.disabled = false; btn.textContent = 'ログイン';
