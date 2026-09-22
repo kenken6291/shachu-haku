@@ -72,6 +72,12 @@
   }
   .leaflet-popup-content { margin: 14px 16px; min-width: 220px; }
 
+  /* スマホのボトムシート(z-1100)の下にポップアップが隠れて「一瞬出てすぐ消える」ように
+     見えてしまう不具合の対策：Leafletのポップアップ/マーカーをシートより手前に表示する */
+  .leaflet-popup-pane, .leaflet-marker-pane, .leaflet-tooltip-pane {
+    z-index: 1150;
+  }
+
   /* ===== モバイル：ボトムシート ===== */
   #sheet {
     transition: transform .25s cubic-bezier(.2,.8,.2,1);
@@ -974,18 +980,27 @@ function spotCard(spot) {
   return el;
 }
 
+function popupAutoPanOptions() {
+  // スマホはボトムシート（peek時 約96px）の分、下側の自動パン余白を広めに取る
+  if (window.innerWidth < 768) {
+    return { autoPanPaddingTopLeft: [20, 70], autoPanPaddingBottomRight: [20, 130] };
+  }
+  return { autoPanPadding: [30, 60] };
+}
+
 function render() {
   // マーカー再構築（クラスタリング利用・ポップアップ内容は開いたときに生成して高速化）
   markerClusterGroup.clearLayers();
   markers = {};
   const spots = filteredSpots();
   const newMarkers = [];
+  const popupOpts = { closeButton: true, ...popupAutoPanOptions() };
 
   spots.forEach(spot => {
     // 1件の描画失敗（不正データ等）で他のスポットまで巻き込まれないよう分離
     try {
       const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot.category), title: spot.name })
-        .bindPopup('', { closeButton: true, autoPanPadding: [30, 60] }); // 内容はpopupopen時に設定（初期描画を軽くする）
+        .bindPopup('', popupOpts); // 内容はpopupopen時に設定（初期描画を軽くする）
       m.spotId = spot.id;
       m.on('click', () => highlightCard(spot.id));
       markers[spot.id] = m;
