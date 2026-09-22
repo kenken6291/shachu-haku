@@ -981,11 +981,16 @@ function spotCard(spot) {
 }
 
 function popupAutoPanOptions() {
-  // スマホはボトムシート（peek時 約96px）の分、下側の自動パン余白を広めに取る
+  // スマホはボトムシート（peek時 約96px）の分、下側の自動パン余白を広めに取り、
+  // ポップアップ本体の高さも画面に収まる範囲に制限する（消せなくなる不具合の対策）
   if (window.innerWidth < 768) {
-    return { autoPanPaddingTopLeft: [20, 70], autoPanPaddingBottomRight: [20, 130] };
+    return {
+      autoPanPaddingTopLeft: [20, 70],
+      autoPanPaddingBottomRight: [20, 130],
+      maxHeight: Math.max(260, Math.round(window.innerHeight * 0.55)),
+    };
   }
-  return { autoPanPadding: [30, 60] };
+  return { autoPanPadding: [30, 60], maxHeight: Math.round(window.innerHeight * 0.75) };
 }
 
 function render() {
