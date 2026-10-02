@@ -1597,6 +1597,15 @@ function spotFormFields(spot = {}) {
         <select id="spot-sleep" class="auth-input">${sleepOptions}</select>
         <p class="text-[11px] text-gray-400 mt-1">実際に確認できた内容にしてください。不明な場合は「要確認」を選んでください。</p>
       </div>
+      <div>
+        <label class="auth-label" for="spot-address">住所・施設名から位置を検索</label>
+        <div class="flex gap-2">
+          <input id="spot-address" type="text" class="auth-input flex-1" maxlength="120" placeholder="例: 静岡県静岡市駿河区用宗2丁目" onkeydown="if(event.key==='Enter'){event.preventDefault();handleGeocodeAddress();}" />
+          <button type="button" id="geocode-btn" class="shrink-0 px-3 rounded-lg bg-pine text-white text-xs font-bold" onclick="handleGeocodeAddress()">🔍 検索</button>
+        </div>
+        <p id="geocode-status" class="text-[11px] text-gray-400 mt-1">住所を入力して「検索」を押すと、下の緯度・経度が自動で入ります。</p>
+        <div id="geocode-candidates" hidden class="mt-1.5 rounded-lg border border-pine/15 divide-y divide-pine/10 max-h-40 overflow-y-auto"></div>
+      </div>
       <div class="grid grid-cols-2 gap-2">
         <div>
           <label class="auth-label" for="spot-lat">緯度</label>
@@ -1607,7 +1616,7 @@ function spotFormFields(spot = {}) {
           <input id="spot-lng" type="number" step="0.000001" class="auth-input" value="${spot.lng ?? ''}" />
         </div>
       </div>
-      <p class="text-[11px] text-gray-400 -mt-1.5">📍現在地から緯度経度を入力: <button type="button" class="auth-btn-link" onclick="fillCurrentLocation()">現在地を使う</button>　／　<button type="button" class="auth-btn-link" onclick="startMapPickLocation()">🗺️ 地図をタップして選択</button></p>
+      <p class="text-[11px] text-gray-400 -mt-1.5">📍その他の方法: <button type="button" class="auth-btn-link" onclick="fillCurrentLocation()">現在地を使う</button>　／　<button type="button" class="auth-btn-link" onclick="startMapPickLocation()">🗺️ 地図をタップして選択</button></p>
       <div>
         <div class="flex items-center justify-between">
           <label class="auth-label !mb-0" for="spot-desc">説明</label>
@@ -1670,6 +1679,106 @@ function fillCurrentLocation() {
     document.getElementById('spot-lat').value = pos.coords.latitude.toFixed(6);
     document.getElementById('spot-lng').value = pos.coords.longitude.toFixed(6);
   });
+}
+
+/* =====================================================================
+ * 住所・施設名から緯度・経度を取得（投稿/編集フォーム用）
+ *   1) 国土地理院 住所検索API（無料・キー不要・住所に強い）
+ *   2) 見つからなければ GAS 経由の Google ジオコーダ（施設名にも対応）
+ * ===================================================================== */
+let geocodeCandidates = [];
+
+async function geocodeByGsi(q) {
+  const res = await fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(q));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  return (json || []).slice(0, 8).map(f => ({
+    lat: f.geometry.coordinates[1],
+    lng: f.geometry.coordinates[0],
+    label: f.properties.title,
+  })).filter(c => !isNaN(c.lat) && !isNaN(c.lng));
+}
+
+async function geocodeByGas(q) {
+  if (!auth || !auth.token) return [];
+  const res = await callApi('geocodeAddress', { token: auth.token, address: q });
+  if (!res.ok) return [];
+  return res.results || [];
+}
+
+async function geocodeAddress(q) {
+  let results = [];
+  try { results = await geocodeByGsi(q); } catch (e) { console.warn('国土地理院APIエラー:', e.message); }
+  if (!results.length) {
+    try { results = await geocodeByGas(q); } catch (e) { console.warn('GASジオコーダエラー:', e.message); }
+  }
+  return results;
+}
+
+function applyGeocodeResult(c) {
+  const latEl = document.getElementById('spot-lat');
+  const lngEl = document.getElementById('spot-lng');
+  if (latEl) latEl.value = Number(c.lat).toFixed(6);
+  if (lngEl) lngEl.value = Number(c.lng).toFixed(6);
+  const st = document.getElementById('geocode-status');
+  if (st) { st.textContent = '📍 位置を設定しました: ' + c.label; st.style.color = '#2F5D50'; }
+  const box = document.getElementById('geocode-candidates');
+  if (box) box.hidden = true;
+
+  if (mapPickMarker) map.removeLayer(mapPickMarker);
+  mapPickMarker = L.marker([c.lat, c.lng], {
+    icon: L.divIcon({ className: '', html: '<div class="pin" style="background:#E8A33D"><span>📍</span></div>', iconSize: [34, 34], iconAnchor: [17, 34] }),
+  }).addTo(map);
+  map.setView([c.lat, c.lng], 15);
+}
+
+function selectGeocodeCandidate(i) {
+  const c = geocodeCandidates[i];
+  if (c) applyGeocodeResult(c);
+}
+
+async function handleGeocodeAddress() {
+  const input = document.getElementById('spot-address');
+  const st = document.getElementById('geocode-status');
+  const box = document.getElementById('geocode-candidates');
+  const btn = document.getElementById('geocode-btn');
+  const q = (input.value || '').trim();
+  st.style.color = '';
+  if (!q) { st.textContent = '住所または施設名を入力してください。'; return; }
+
+  btn.disabled = true; btn.textContent = '検索中…';
+  st.textContent = '検索しています…';
+  box.hidden = true; box.innerHTML = '';
+  try {
+    geocodeCandidates = await geocodeAddress(q);
+    if (!geocodeCandidates.length) {
+      st.textContent = '見つかりませんでした。都道府県から入力するか、「地図をタップして選択」をご利用ください。';
+      st.style.color = '#C4604F';
+    } else if (geocodeCandidates.length === 1) {
+      applyGeocodeResult(geocodeCandidates[0]);
+    } else {
+      st.textContent = `${geocodeCandidates.length}件見つかりました。該当するものを選んでください。`;
+      box.innerHTML = geocodeCandidates.map((c, i) => `
+        <button type="button" class="block w-full text-left text-xs px-2.5 py-2 hover:bg-mist" onclick="selectGeocodeCandidate(${i})">📍 ${esc(c.label)}</button>`).join('');
+      box.hidden = false;
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 検索';
+  }
+}
+
+/* 緯度・経度が空で住所だけ入力されている場合、送信時に自動で位置を取得 */
+async function ensureLatLngFromAddress(d) {
+  if (!isNaN(d.lat) && !isNaN(d.lng)) return d;
+  const addrEl = document.getElementById('spot-address');
+  const q = addrEl ? addrEl.value.trim() : '';
+  if (!q) return d;
+  const results = await geocodeAddress(q);
+  if (!results.length) return d;
+  applyGeocodeResult(results[0]);
+  d.lat = Number(Number(results[0].lat).toFixed(6));
+  d.lng = Number(Number(results[0].lng).toFixed(6));
+  return d;
 }
 
 /* =====================================================================
@@ -1742,9 +1851,16 @@ async function handleSubmitSpot() {
   const d = readSpotForm();
   const errEl = document.getElementById('spot-form-error');
   errEl.textContent = '';
-  if (!d.name || isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '名称・緯度・経度は必須です。'; return; }
+  if (!d.name) { errEl.textContent = '名称は必須です。'; return; }
 
   const btn = document.getElementById('spot-submit-btn');
+  if (isNaN(d.lat) || isNaN(d.lng)) {
+    btn.disabled = true; btn.textContent = '住所から位置を取得中…';
+    try { await ensureLatLngFromAddress(d); } catch (e) { /* 下でエラー表示 */ }
+    btn.disabled = false; btn.textContent = '投稿する';
+  }
+  if (isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '位置が未設定です。住所を検索するか、緯度・経度を入力してください。'; return; }
+
   btn.disabled = true; btn.textContent = '投稿中…';
   try {
     const res = await callApi('submitSpot', { token: auth.token, spot: d });
@@ -1783,9 +1899,16 @@ async function handleUpdateSpot(spotId) {
   const d = readSpotForm();
   const errEl = document.getElementById('spot-form-error');
   errEl.textContent = '';
-  if (!d.name || isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '名称・緯度・経度は必須です。'; return; }
+  if (!d.name) { errEl.textContent = '名称は必須です。'; return; }
 
   const btn = document.getElementById('spot-submit-btn');
+  if (isNaN(d.lat) || isNaN(d.lng)) {
+    btn.disabled = true; btn.textContent = '住所から位置を取得中…';
+    try { await ensureLatLngFromAddress(d); } catch (e) { /* 下でエラー表示 */ }
+    btn.disabled = false; btn.textContent = '更新する';
+  }
+  if (isNaN(d.lat) || isNaN(d.lng)) { errEl.textContent = '位置が未設定です。住所を検索するか、緯度・経度を入力してください。'; return; }
+
   btn.disabled = true; btn.textContent = '更新中…';
   try {
     const res = await callApi('updateSpot', { token: auth.token, spotId, spot: d });
