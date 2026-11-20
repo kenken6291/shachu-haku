@@ -1623,6 +1623,11 @@ function spotFormFields(spot = {}) {
           <button type="button" id="voice-input-btn" class="auth-btn-link" onclick="toggleVoiceRecording()">🎙️ 音声で入力</button>
         </div>
         <textarea id="spot-desc" rows="3" class="auth-input mt-1" maxlength="300">${esc(spot.description || '')}</textarea>
+        <div class="mt-1 flex items-center gap-1.5">
+          <label class="text-[11px] text-gray-500 shrink-0" for="gemini-model-select">🤖 AIモデル</label>
+          <select id="gemini-model-select" class="auth-input !text-xs !py-1 !mt-0" onchange="setGeminiModel(this.value)">${geminiModelOptionsHtml()}</select>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-0.5">選んだモデルが使えない時は、汎用の最新モデルに自動で切り替わります</p>
         <p id="voice-status" class="text-[11px] text-gray-400 mt-1"></p>
         <div id="voice-preview-wrap" hidden class="mt-1.5 p-2 rounded-lg bg-mist space-y-1.5">
           <p class="text-[11px] font-bold text-pine/70">🎙️ 音声認識結果（内容を確認・加筆・修正してから反映してください）</p>
@@ -2035,6 +2040,35 @@ async function handleDeleteExistingPhoto(spotId, fileId) {
 /* =====================================================================
  * 音声入力（Gemini APIで文字起こし・整形 → 加筆・修正・削除可能なプレビュー）
  * ===================================================================== */
+/* ---------- Geminiモデル選択（端末のlocalStorageに保存） ---------- */
+const GEMINI_MODELS = [
+  { id: 'auto',              label: '自動モード（汎用の最新）' },
+  { id: 'gemini-4-hydrogen', label: '4 Hydrogen（日々の暮らしをサポート）' },
+  { id: 'gemini-4-neon',     label: '4 Neon（Deeper analysis）' },
+  { id: 'gemini-4-carbon',   label: '4 Carbon（Code & complex work）' },
+  { id: 'gemini-4-argon',    label: '4 Argon' },
+  { id: 'gemini-3.8-flash',  label: '3.8 Flash' },
+  { id: 'gemini-3.5-flash',  label: '3.5 Flash' },
+];
+const GEMINI_MODEL_KEY = 'kurumatabi_gemini_model';
+
+function getGeminiModel() {
+  let v = 'auto';
+  try { v = localStorage.getItem(GEMINI_MODEL_KEY) || 'auto'; } catch (e) {}
+  return GEMINI_MODELS.some(m => m.id === v) ? v : 'auto';
+}
+function setGeminiModel(v) {
+  try { localStorage.setItem(GEMINI_MODEL_KEY, v); } catch (e) {}
+}
+function geminiModelLabel(id) {
+  const m = GEMINI_MODELS.find(x => x.id === id);
+  return m ? m.label.replace(/（.*）/, '') : id;
+}
+function geminiModelOptionsHtml() {
+  const cur = getGeminiModel();
+  return GEMINI_MODELS.map(m => `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+}
+
 let voiceMediaRecorder = null;
 let voiceAudioChunks = [];
 let voiceMaxTimer = null;
@@ -2085,12 +2119,13 @@ function blobToBase64(blob) {
 async function handleVoiceRecorded() {
   const statusEl = document.getElementById('voice-status');
   if (!statusEl) return; // フォームが閉じられていた場合
-  statusEl.textContent = 'Geminiで文字起こし・整形中…';
+  statusEl.textContent = `Gemini（${geminiModelLabel(getGeminiModel())}）で文字起こし・整形中…`;
   try {
     const mimeType = (voiceMediaRecorder && voiceMediaRecorder.mimeType) || 'audio/webm';
     const blob = new Blob(voiceAudioChunks, { type: mimeType });
     const base64 = await blobToBase64(blob);
-    const res = await callApi('transcribeVoice', { token: auth.token, mimeType, audioBase64: base64 });
+    const model = getGeminiModel();
+    const res = await callApi('transcribeVoice', { token: auth.token, mimeType, audioBase64: base64, model });
     if (!res.ok) { statusEl.textContent = '音声の認識に失敗しました。もう一度お試しください。'; return; }
     const previewWrap = document.getElementById('voice-preview-wrap');
     const previewText = document.getElementById('voice-preview-text');
@@ -2098,7 +2133,14 @@ async function handleVoiceRecorded() {
       previewText.value = res.text;
       previewWrap.hidden = false;
     }
-    statusEl.textContent = '';
+    if (res.model) {
+      const switched = model !== 'auto' && res.model !== model;
+      statusEl.textContent = switched
+        ? `※ ${geminiModelLabel(model)} が使えなかったため ${geminiModelLabel(res.model)} で処理しました`
+        : `使用モデル: ${geminiModelLabel(res.model)}`;
+    } else {
+      statusEl.textContent = '';
+    }
   } catch (e) {
     statusEl.textContent = '通信エラーが発生しました。';
   }
